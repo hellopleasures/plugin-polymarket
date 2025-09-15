@@ -1,7 +1,7 @@
 {
-  "name": "plugin-polymarket",
+  "name": "@elizaos/plugin-polymarket",
   "description": "ElizaOS plugin for Polymarket prediction markets",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -29,9 +29,9 @@
     "dist"
   ],
   "dependencies": {
-    "@elizaos/cli": "workspace:*",
-    "@elizaos/core": "workspace:*",
-    "@elizaos/plugin-sql": "workspace:*",
+    "@elizaos/cli": "^1.5.9-alpha.1",
+    "@elizaos/core": "^1.5.9-alpha.1",
+    "@elizaos/plugin-sql": "^1.5.9-alpha.1",
     "@polymarket/clob-client": "^4.16.0",
     "ethers": "^6.13.1",
     "node-fetch": "^3.0.0",
@@ -65,7 +65,39 @@
   "platform": "node",
   "agentConfig": {
     "pluginType": "elizaos:plugin:1.0.0",
-    "pluginParameters": {}
+    "pluginParameters": {
+      "CLOB_API_URL": {
+        "type": "string",
+        "description": "Base URL for the Polymarket CLOB API endpoint.",
+        "required": false,
+        "default": "https://clob.polymarket.com",
+        "sensitive": false
+      },
+      "WALLET_PRIVATE_KEY": {
+        "type": "string",
+        "description": "Private key of the wallet used for signing transactions and authentication.",
+        "required": false,
+        "sensitive": true
+      },
+      "PRIVATE_KEY": {
+        "type": "string",
+        "description": "Alternative private key for authentication (fallback if WALLET_PRIVATE_KEY not set).",
+        "required": false,
+        "sensitive": true
+      },
+      "CLOB_API_KEY": {
+        "type": "string",
+        "description": "API key for authenticating requests to the Polymarket CLOB API.",
+        "required": false,
+        "sensitive": true
+      },
+      "POLYMARKET_PRIVATE_KEY": {
+        "type": "string",
+        "description": "Polymarket-specific private key for advanced trading operations.",
+        "required": false,
+        "sensitive": true
+      }
+    }
   },
   "npmPackage": "plugin-polymarket"
 }

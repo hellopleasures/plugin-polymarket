@@ -6,8 +6,6 @@ import {
   type Memory,
   type State,
   logger,
-  ModelType,
-  composePromptFromState,
 } from '@elizaos/core';
 import { callLLMWithTimeout } from '../utils/llmHelpers';
 import { initializeClobClient } from '../utils/clobClient';
@@ -75,7 +73,7 @@ export const placeOrderAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<Content> => {
+  ): Promise<void> => {
     logger.info('[placeOrderAction] Handler called!');
 
     const clobApiUrl = runtime.getSetting('CLOB_API_URL');
@@ -92,7 +90,7 @@ export const placeOrderAction: Action = {
       if (callback) {
         await callback(errorContent);
       }
-      throw new Error(errorMessage);
+      return;
     }
 
     let tokenId: string;
@@ -194,7 +192,7 @@ Please provide order details in your request. Examples:
         if (callback) {
           await callback(errorContent);
         }
-        throw new Error(errorMessage);
+        return;
       }
     }
 
@@ -223,12 +221,13 @@ Please provide order details in your request. Examples:
         feeRateBps: parseFloat(feeRateBps), // Convert to number
       };
 
-      logger.info(`[placeOrderAction] Creating order with args:`, orderArgs);
+      logger.info('[placeOrderAction] Creating order with args:', JSON.stringify(orderArgs));
 
       // Create the signed order with enhanced error handling
       let signedOrder;
       try {
-        signedOrder = await client.createOrder(orderArgs);
+        // Cast client to ClobClient type and use createOrder
+        signedOrder = await (client as ClobClient).createOrder(orderArgs as any);
         logger.info(`[placeOrderAction] Order created successfully`);
       } catch (createError) {
         logger.error(`[placeOrderAction] Error creating order:`, createError);
@@ -236,29 +235,32 @@ Please provide order details in your request. Examples:
         // Check for specific error types
         if (createError instanceof Error) {
           if (createError.message.includes('minimum_tick_size')) {
-            throw new Error(
+            logger.error(
               `Invalid market data: The market may not exist or be inactive. Please verify the token ID is correct and the market is active.`
             );
+            return;
           }
           if (createError.message.includes('undefined is not an object')) {
-            throw new Error(
+            logger.error(
               `Market data unavailable: The token ID may be invalid or the market may be closed.`
             );
+            return;
           }
         }
-        throw createError;
+        return;
       }
 
       // Post the order with enhanced error handling
       let orderResponse;
       try {
-        orderResponse = await client.postOrder(signedOrder, orderType as OrderType);
+        orderResponse = await (client as any).postOrder(signedOrder, orderType as OrderType);
         logger.info(`[placeOrderAction] Order posted successfully`);
       } catch (postError) {
         logger.error(`[placeOrderAction] Error posting order:`, postError);
-        throw new Error(
+        logger.error(
           `Failed to submit order: ${postError instanceof Error ? postError.message : 'Unknown error'}`
         );
+        return;
       }
 
       // Format response based on success
@@ -356,7 +358,7 @@ Please check your parameters and try again. Common issues:
         await callback(responseContent);
       }
 
-      return responseContent;
+      return;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error occurred while placing order';
@@ -388,7 +390,7 @@ Please check your configuration and try again. Make sure:
       if (callback) {
         await callback(errorContent);
       }
-      throw new Error(errorMessage);
+      return;
     }
   },
 

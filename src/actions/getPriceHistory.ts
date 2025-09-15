@@ -5,8 +5,7 @@ import {
   type State,
   type HandlerCallback,
   logger,
-  ModelType,
-  ActionExample,
+  type ActionExample,
 } from '@elizaos/core';
 
 import { initializeClobClient } from '../utils/clobClient.js';
@@ -93,7 +92,7 @@ export const getPriceHistory: Action = {
     state: State | undefined,
     _options: any,
     callback?: HandlerCallback
-  ): Promise<boolean> => {
+  ): Promise<void> => {
     try {
       logger.info('[getPriceHistory] Starting price history retrieval');
 
@@ -133,7 +132,7 @@ export const getPriceHistory: Action = {
       logger.info(
         `[getPriceHistory] Fetching price history for token ${params.tokenId} with interval ${interval}`
       );
-      const priceHistory = await clobClient.getPricesHistory({
+      const priceHistory = await (clobClient as any).getPricesHistory({
         token_id: params.tokenId,
         interval: interval as any,
       });
@@ -161,7 +160,7 @@ export const getPriceHistory: Action = {
         });
       }
 
-      return true;
+      return;
     } catch (error) {
       logger.error('[getPriceHistory] Error retrieving price history:', error);
 
@@ -184,7 +183,7 @@ Please check:
         });
       }
 
-      return false;
+      return;
     }
   },
 
@@ -228,7 +227,7 @@ Please check:
         },
       },
     ],
-  ] as ActionExample[][],
+  ] satisfies ActionExample[][],
 };
 
 /**

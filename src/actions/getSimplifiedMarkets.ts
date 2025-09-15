@@ -6,8 +6,6 @@ import {
   type Memory,
   type State,
   logger,
-  ModelType,
-  composePromptFromState,
 } from '@elizaos/core';
 import { callLLMWithTimeout } from '../utils/llmHelpers';
 import { initializeClobClient } from '../utils/clobClient';
@@ -53,7 +51,7 @@ export const getSimplifiedMarketsAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<Content> => {
+  ): Promise<void> => {
     logger.info('[getSimplifiedMarketsAction] Handler called!');
 
     const clobApiUrl = runtime.getSetting('CLOB_API_URL');
@@ -70,7 +68,7 @@ export const getSimplifiedMarketsAction: Action = {
       if (callback) {
         await callback(errorContent);
       }
-      throw new Error(errorMessage);
+      return;
     }
 
     let nextCursor = '';
@@ -183,7 +181,7 @@ export const getSimplifiedMarketsAction: Action = {
         await callback(responseContent);
       }
 
-      return responseContent;
+      return;
     } catch (error) {
       logger.error('[getSimplifiedMarketsAction] Error fetching simplified markets:', error);
 
@@ -208,7 +206,7 @@ Please check:
       if (callback) {
         await callback(errorContent);
       }
-      throw error;
+      return;
     }
   },
 

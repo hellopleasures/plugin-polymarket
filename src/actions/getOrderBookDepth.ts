@@ -6,11 +6,9 @@ import {
   type Memory,
   type State,
   logger,
-  ModelType,
-  composePromptFromState,
 } from '@elizaos/core';
 import { callLLMWithTimeout } from '../utils/llmHelpers';
-import { initializeClobClient, type BookParams } from '../utils/clobClient';
+import { initializeClobClient } from '../utils/clobClient';
 import { getOrderBookDepthTemplate } from '../templates';
 import type { OrderBook } from '../types';
 
@@ -51,7 +49,7 @@ export const getOrderBookDepthAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<Content> => {
+  ): Promise<void> => {
     logger.info('[getOrderBookDepthAction] Handler called!');
 
     const clobApiUrl = runtime.getSetting('CLOB_API_URL');
@@ -68,7 +66,7 @@ export const getOrderBookDepthAction: Action = {
       if (callback) {
         await callback(errorContent);
       }
-      throw new Error(errorMessage);
+      return;
     }
 
     let tokenIds: string[] = [];
@@ -101,7 +99,7 @@ Please provide one or more token IDs in your request. Examples:
         if (callback) {
           await callback(errorContent);
         }
-        throw new Error(errorMessage);
+        return;
       }
 
       tokenIds = llmResult?.tokenIds || [];
@@ -126,7 +124,7 @@ Please provide one or more token IDs in your request. Examples:
     } catch (error) {
       // Check if this is our specific error message and re-throw it
       if (error instanceof Error && error.message.includes('Token identifiers not found')) {
-        throw error;
+        return;
       }
 
       logger.warn('[getOrderBookDepthAction] LLM extraction failed, trying regex fallback');
@@ -174,7 +172,7 @@ Please provide one or more token IDs in your request. Examples:
         if (callback) {
           await callback(errorContent);
         }
-        throw new Error(errorMessage);
+        return;
       }
     }
 
@@ -182,11 +180,11 @@ Please provide one or more token IDs in your request. Examples:
       // Initialize CLOB client
       const clobClient = await initializeClobClient(runtime);
 
-      // Prepare book parameters
-      const bookParams: BookParams[] = tokenIds.map((tokenId) => ({ token_id: tokenId }));
+      // Prepare book parameters - cast to any since the library accepts it without side
+      const bookParams = tokenIds.map((tokenId) => ({ token_id: tokenId }));
 
       // Fetch order book data
-      const orderBooks: OrderBook[] = await clobClient.getOrderBooks(bookParams);
+      const orderBooks: OrderBook[] = await clobClient.getOrderBooks(bookParams as any);
 
       if (!orderBooks || orderBooks.length === 0) {
         throw new Error(`No order books found for the provided token IDs: ${tokenIds.join(', ')}`);
@@ -257,7 +255,7 @@ Please provide one or more token IDs in your request. Examples:
         await callback(responseContent);
       }
 
-      return responseContent;
+      return;
     } catch (error) {
       logger.error('[getOrderBookDepthAction] Error fetching order books:', error);
 
@@ -286,7 +284,7 @@ Please check:
       if (callback) {
         await callback(errorContent);
       }
-      throw error;
+      return;
     }
   },
 

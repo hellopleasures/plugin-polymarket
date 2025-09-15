@@ -6,8 +6,6 @@ import {
   type Memory,
   type State,
   logger,
-  ModelType,
-  composePromptFromState,
 } from '@elizaos/core';
 import { callLLMWithTimeout } from '../utils/llmHelpers';
 import { initializeClobClient } from '../utils/clobClient';
@@ -56,7 +54,7 @@ export const getOrderBookSummaryAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<Content> => {
+  ): Promise<void> => {
     logger.info('[getOrderBookSummaryAction] Handler called!');
 
     const clobApiUrl = runtime.getSetting('CLOB_API_URL');
@@ -73,7 +71,7 @@ export const getOrderBookSummaryAction: Action = {
       if (callback) {
         await callback(errorContent);
       }
-      throw new Error(errorMessage);
+      return;
     }
 
     let tokenId = '';
@@ -106,7 +104,7 @@ Please provide a token ID in your request. For example:
         if (callback) {
           await callback(errorContent);
         }
-        throw new Error(errorMessage);
+        return;
       }
 
       tokenId = llmResult?.tokenId || '';
@@ -127,7 +125,7 @@ Please provide a token ID in your request. For example:
         error.message ===
           'Token identifier not found. Please specify a token ID for the order book.'
       ) {
-        throw error;
+        return;
       }
 
       logger.warn('[getOrderBookSummaryAction] LLM extraction failed, trying regex fallback');
@@ -160,7 +158,7 @@ Please provide a token ID in your request. For example:
         if (callback) {
           await callback(errorContent);
         }
-        throw new Error(errorMessage);
+        return;
       }
     }
 
@@ -265,7 +263,7 @@ Please provide a token ID in your request. For example:
         await callback(responseContent);
       }
 
-      return responseContent;
+      return;
     } catch (error) {
       logger.error('[getOrderBookSummaryAction] Error fetching order book:', error);
 
@@ -292,7 +290,7 @@ Please check:
       if (callback) {
         await callback(errorContent);
       }
-      throw error;
+      return;
     }
   },
 

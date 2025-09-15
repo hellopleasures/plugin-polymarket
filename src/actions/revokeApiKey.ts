@@ -1,4 +1,4 @@
-import { IAgentRuntime, Memory, State, HandlerCallback, logger } from '@elizaos/core';
+import { Action, IAgentRuntime, Memory, State, HandlerCallback, logger } from '@elizaos/core';
 import { initializeClobClient } from '../utils/clobClient';
 import { callLLMWithTimeout } from '../utils/llmHelpers';
 import { ethers } from 'ethers';
@@ -18,7 +18,7 @@ export interface RevokeApiKeyResponse {
  * Revoke API Key Action for Polymarket CLOB
  * Deletes/revokes an existing API key to disable L2 authentication
  */
-export const revokeApiKeyAction = {
+export const revokeApiKeyAction: Action = {
   name: 'POLYMARKET_DELETE_API_KEY',
   similes: [
     'REVOKE_API_KEY',

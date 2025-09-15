@@ -6,8 +6,6 @@ import {
   type Memory,
   type State,
   logger,
-  ModelType,
-  composePromptFromState,
 } from '@elizaos/core';
 import { callLLMWithTimeout } from '../utils/llmHelpers';
 import { initializeClobClient } from '../utils/clobClient';
@@ -47,7 +45,7 @@ export const retrieveAllMarketsAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<Content> => {
+  ): Promise<void> => {
     logger.info('[retrieveAllMarketsAction] Handler called!');
 
     const clobApiUrl = runtime.getSetting('CLOB_API_URL');
@@ -64,7 +62,7 @@ export const retrieveAllMarketsAction: Action = {
       if (callback) {
         await callback(errorContent);
       }
-      throw new Error(errorMessage);
+      return;
     }
 
     let filterParams: MarketFilters = {};
@@ -103,7 +101,10 @@ export const retrieveAllMarketsAction: Action = {
       const clobClient = await initializeClobClient(runtime);
 
       // Fetch markets with optional pagination and filters
-      const response = await clobClient.getMarkets(filterParams?.next_cursor || '', filterParams);
+      const response = await (clobClient as any).getMarkets(
+        filterParams?.next_cursor || '',
+        filterParams
+      );
 
       if (!response || !response.data) {
         throw new Error('Invalid response from CLOB API');
@@ -159,7 +160,7 @@ export const retrieveAllMarketsAction: Action = {
         await callback(responseContent);
       }
 
-      return responseContent;
+      return;
     } catch (error) {
       logger.error('[retrieveAllMarketsAction] Error fetching markets:', error);
 
@@ -182,7 +183,7 @@ Please check:
       if (callback) {
         await callback(errorContent);
       }
-      throw error;
+      return;
     }
   },
 

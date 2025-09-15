@@ -5,8 +5,7 @@ import {
   type State,
   type HandlerCallback,
   logger,
-  ModelType,
-  ActionExample,
+  type ActionExample,
 } from '@elizaos/core';
 
 import { initializeClobClient } from '../utils/clobClient.js';
@@ -56,7 +55,7 @@ export const getSamplingMarkets: Action = {
     state: State | undefined,
     _options: any,
     callback?: HandlerCallback
-  ): Promise<boolean> => {
+  ): Promise<void> => {
     try {
       logger.info('[getSamplingMarkets] Starting sampling markets retrieval');
 
@@ -108,7 +107,7 @@ export const getSamplingMarkets: Action = {
         });
       }
 
-      return true;
+      return;
     } catch (error) {
       logger.error('[getSamplingMarkets] Error retrieving sampling markets:', error);
 
@@ -130,7 +129,7 @@ Please check:
         });
       }
 
-      return false;
+      return;
     }
   },
 
@@ -174,7 +173,7 @@ Please check:
         },
       },
     ],
-  ] as ActionExample[][],
+  ] satisfies ActionExample[][],
 };
 
 /**

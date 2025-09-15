@@ -6,8 +6,6 @@ import {
   type Memory,
   type State,
   logger,
-  ModelType,
-  composePromptFromState,
 } from '@elizaos/core';
 import { callLLMWithTimeout } from '../utils/llmHelpers';
 import { initializeClobClient } from '../utils/clobClient';
@@ -55,7 +53,7 @@ export const getSpreadAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<Content> => {
+  ): Promise<void> => {
     try {
       logger.info('[getSpreadAction] Starting spread retrieval process');
 
@@ -118,7 +116,7 @@ Please provide a token ID in your request. Examples:
           if (callback) {
             await callback(errorContent);
           }
-          throw new Error(errorMessage);
+          return;
         }
       }
 
@@ -160,7 +158,7 @@ Please provide a token ID in your request. Examples:
         await callback(responseContent);
       }
 
-      return responseContent;
+      return;
     } catch (error) {
       logger.error('[getSpreadAction] Error getting spread:', error);
 
@@ -183,7 +181,7 @@ Please check:
       if (callback) {
         await callback(errorContent);
       }
-      throw error;
+      return;
     }
   },
   examples: [

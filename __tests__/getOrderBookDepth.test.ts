@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { IAgentRuntime, Memory, State, Content } from '@elizaos/core';
 import { getOrderBookDepthAction } from '../src/actions/getOrderBookDepth';
-import { initializeClobClient, type BookParams } from '../src/utils/clobClient';
+import { initializeClobClient } from '../src/utils/clobClient';
 import { callLLMWithTimeout } from '../src/utils/llmHelpers';
 import type { OrderBook } from '../src/types';
 
@@ -182,7 +182,7 @@ describe('getOrderBookDepthAction', () => {
       expect(result.text).toContain('Total Ask Levels: 4');
       expect((result.data as any)?.orderBooks).toEqual(mockMultipleOrderBooks);
 
-      const expectedParams: BookParams[] = [{ token_id: '123456' }, { token_id: '789012' }];
+      const expectedParams = [{ token_id: '123456' }, { token_id: '789012' }];
       expect(mockClobClient.getOrderBooks).toHaveBeenCalledWith(expectedParams);
     });
 

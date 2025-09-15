@@ -409,10 +409,10 @@ export type AreOrdersScoringResponse = Record<string, boolean>;
  * Parameters for the getOpenOrders ClobClient method.
  */
 export interface GetOpenOrdersParams {
-  market?: string;      // Market condition ID
-  assetId?: string;     // Asset ID (token ID)
-  address?: string;     // User address
-  nextCursor?: string;  // Pagination cursor
+  market?: string; // Market condition ID
+  assetId?: string; // Asset ID (token ID)
+  address?: string; // User address
+  nextCursor?: string; // Pagination cursor
 }
 
 /**
@@ -423,9 +423,9 @@ export interface OpenOrder {
   user_id: string;
   market_id: string; // This is the condition_id
   token_id: string;
-  side: OrderSide;   // Reuses existing OrderSide enum: 'BUY' | 'SELL'
-  type: string;      // e.g., "LIMIT"
-  status: string;    // e.g., "OPEN" - could create an enum if more statuses are known for open orders
+  side: OrderSide; // Reuses existing OrderSide enum: 'BUY' | 'SELL'
+  type: string; // e.g., "LIMIT"
+  status: string; // e.g., "OPEN" - could create an enum if more statuses are known for open orders
   price: string;
   size: string;
   filled_size: string;
@@ -443,7 +443,7 @@ export interface GetTradesParams {
   market_id?: string;
   token_id?: string;
   from_timestamp?: number; // Unix timestamp (seconds)
-  to_timestamp?: number;   // Unix timestamp (seconds)
+  to_timestamp?: number; // Unix timestamp (seconds)
   limit?: number;
   next_cursor?: string;
 }
