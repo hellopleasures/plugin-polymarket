@@ -1,5 +1,6 @@
 import {
   type Action,
+  type ActionResult,
   type Content,
   type HandlerCallback,
   type IAgentRuntime,
@@ -54,7 +55,7 @@ export const getOrderBookSummaryAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<void> => {
+  ): Promise<ActionResult> => {
     logger.info('[getOrderBookSummaryAction] Handler called!');
 
     const clobApiUrl = runtime.getSetting('CLOB_API_URL');
@@ -71,7 +72,19 @@ export const getOrderBookSummaryAction: Action = {
       if (callback) {
         await callback(errorContent);
       }
-      return;
+      return {
+        text: errorMessage,
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_ORDER_BOOK',
+          error: errorMessage,
+        },
+        success: false,
+        error: new Error(errorMessage),
+      };
     }
 
     let tokenId = '';
@@ -104,7 +117,19 @@ Please provide a token ID in your request. For example:
         if (callback) {
           await callback(errorContent);
         }
-        return;
+        return {
+          text: errorContent.text,
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_GET_ORDER_BOOK',
+            error: errorMessage,
+          },
+          success: false,
+          error: new Error(errorMessage),
+        };
       }
 
       tokenId = llmResult?.tokenId || '';
@@ -125,7 +150,20 @@ Please provide a token ID in your request. For example:
         error.message ===
           'Token identifier not found. Please specify a token ID for the order book.'
       ) {
-        return;
+        const errorMessage = error.message;
+        return {
+          text: errorMessage,
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_GET_ORDER_BOOK',
+            error: errorMessage,
+          },
+          success: false,
+          error: error,
+        };
       }
 
       logger.warn('[getOrderBookSummaryAction] LLM extraction failed, trying regex fallback');
@@ -158,7 +196,19 @@ Please provide a token ID in your request. For example:
         if (callback) {
           await callback(errorContent);
         }
-        return;
+        return {
+          text: errorContent.text,
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_GET_ORDER_BOOK',
+            error: errorMessage,
+          },
+          success: false,
+          error: new Error(errorMessage),
+        };
       }
     }
 
@@ -263,7 +313,36 @@ Please provide a token ID in your request. For example:
         await callback(responseContent);
       }
 
-      return;
+      return {
+        text: responseText,
+        values: {
+          success: true,
+          tokenId,
+          bidCount,
+          askCount,
+          bestBidPrice: bestBid?.price,
+          bestAskPrice: bestAsk?.price,
+          spread,
+          totalBidSize,
+          totalAskSize,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_ORDER_BOOK',
+          orderBook,
+          tokenId,
+          summary: {
+            bidCount,
+            askCount,
+            bestBid,
+            bestAsk,
+            spread,
+            totalBidSize,
+            totalAskSize,
+          },
+          timestamp: new Date().toISOString(),
+        },
+        success: true,
+      };
     } catch (error) {
       logger.error('[getOrderBookSummaryAction] Error fetching order book:', error);
 
@@ -290,7 +369,22 @@ Please check:
       if (callback) {
         await callback(errorContent);
       }
-      return;
+      return {
+        text: errorContent.text,
+        values: {
+          success: false,
+          error: true,
+          tokenId,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_ORDER_BOOK',
+          error: errorMessage,
+          tokenId,
+          timestamp: new Date().toISOString(),
+        },
+        success: false,
+        error: error instanceof Error ? error : new Error(errorMessage),
+      };
     }
   },
 

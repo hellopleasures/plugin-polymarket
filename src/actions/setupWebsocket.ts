@@ -1,5 +1,6 @@
 import {
   type Action,
+  type ActionResult,
   type Content,
   type HandlerCallback,
   type IAgentRuntime,
@@ -62,7 +63,7 @@ export const setupWebsocketAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<Content> => {
+  ): Promise<ActionResult> => {
     logger.info('[setupWebsocketAction] Handler called - now using ws library.');
 
     // Clear any existing client from previous attempts / other types
@@ -143,7 +144,19 @@ export const setupWebsocketAction: Action = {
         `[setupWebsocketAction] Validation Failure: ${errorMsg} Input was: "${message.content?.text}"`
       );
       if (callback) await callback({ text: `❌ ${errorMsg}` });
-      throw new Error(errorMsg);
+      return {
+        text: `❌ ${errorMsg}`,
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_SETUP_WEBSOCKET',
+          error: errorMsg,
+        },
+        success: false,
+        error: new Error(errorMsg),
+      };
     }
 
     // Determine subscription type and construct WebSocket URL
@@ -165,7 +178,19 @@ export const setupWebsocketAction: Action = {
         const errMsg = 'User ID is required for user channel subscription but was not found.';
         logger.error(`[setupWebsocketAction] ${errMsg}`);
         if (callback) await callback({ text: `❌ ${errMsg}` });
-        throw new Error(errMsg);
+        return {
+          text: `❌ ${errMsg}`,
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_SETUP_WEBSOCKET',
+            error: errMsg,
+          },
+          success: false,
+          error: new Error(errMsg),
+        };
       }
       subMsgPayload.markets = extractedMarkets || []; // For user channel, 'markets' are condition_ids
       // Authentication is required for user channel
@@ -178,7 +203,19 @@ export const setupWebsocketAction: Action = {
           'API Key, Secret, and Passphrase are required in settings for user channel WebSocket subscriptions.';
         logger.error(`[setupWebsocketAction] Missing credentials for user subscription: ${errMsg}`);
         if (callback) await callback({ text: `❌ ${errMsg}` });
-        throw new Error(errMsg);
+        return {
+          text: `❌ ${errMsg}`,
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_SETUP_WEBSOCKET',
+            error: errMsg,
+          },
+          success: false,
+          error: new Error(errMsg),
+        };
       }
       subMsgPayload.auth = { apiKey, secret: apiSecret, passphrase: apiPassphrase };
     } else {
@@ -188,7 +225,19 @@ export const setupWebsocketAction: Action = {
           'At least one market (condition ID or asset ID) is required for market channel subscription.';
         logger.error(`[setupWebsocketAction] ${errMsg}`);
         if (callback) await callback({ text: `❌ ${errMsg}` });
-        throw new Error(errMsg);
+        return {
+          text: `❌ ${errMsg}`,
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_SETUP_WEBSOCKET',
+            error: errMsg,
+          },
+          success: false,
+          error: new Error(errMsg),
+        };
       }
       // The example uses 'assets_ids' for market subscriptions with token IDs.
       // We are getting 'condition_ids' from the user. This needs clarification from Polymarket docs
@@ -201,7 +250,7 @@ export const setupWebsocketAction: Action = {
       );
     }
 
-    return new Promise<Content>((resolvePromise, rejectPromise) => {
+    return new Promise<ActionResult>((resolvePromise, rejectPromise) => {
       try {
         logger.info(`[setupWebsocketAction] Creating new WebSocket connection to: ${wsUrl}`);
         const wsClient = new WebSocket(wsUrl);
@@ -214,14 +263,29 @@ export const setupWebsocketAction: Action = {
           const messageStr = JSON.stringify(subMsgPayload);
           wsClient.send(messageStr, (err?: Error) => {
             if (err) {
-              logger.error('[setupWebsocketAction] Error sending subscription message:', err);
+              logger.error(
+                '[setupWebsocketAction] Error sending subscription message:',
+                err.message
+              );
               setActiveClobSocketClientReference(null);
               wsClient.terminate();
-              const errorContent: Content = {
+              const errorContent = {
                 text: `❌ WebSocket Error: Failed to send subscription - ${err.message}`,
               };
               if (callback) callback(errorContent);
-              rejectPromise(new Error(`Failed to send subscription: ${err.message}`));
+              rejectPromise({
+                text: errorContent.text,
+                values: {
+                  success: false,
+                  error: true,
+                },
+                data: {
+                  actionName: 'POLYMARKET_SETUP_WEBSOCKET',
+                  error: err.message,
+                },
+                success: false,
+                error: err,
+              });
               return;
             }
             logger.info(`[setupWebsocketAction] Subscription message sent: ${messageStr}`);
@@ -233,7 +297,7 @@ export const setupWebsocketAction: Action = {
             responseText +=
               ' Waiting for real-time updates. Use POLYMARKET_HANDLE_REALTIME_UPDATES to process messages.';
 
-            const responseContent: Content = {
+            const responseContent = {
               text: responseText,
               actions: ['POLYMARKET_HANDLE_REALTIME_UPDATES'],
               data: {
@@ -243,17 +307,44 @@ export const setupWebsocketAction: Action = {
               },
             };
             if (callback) callback(responseContent);
-            resolvePromise(responseContent);
+            resolvePromise({
+              text: responseText,
+              values: {
+                success: true,
+                subscriptionType,
+                marketCount: subMsgPayload.markets?.length || 0,
+                userId: extractedUserId,
+              },
+              data: {
+                actionName: 'POLYMARKET_SETUP_WEBSOCKET',
+                status: 'subscribed',
+                subscription: subMsgPayload,
+                timestamp: new Date().toISOString(),
+              },
+              success: true,
+            });
           });
         });
 
         wsClient.on('error', (error: Error) => {
-          logger.error('[setupWebsocketAction] WebSocket connection error:', error);
+          logger.error('[setupWebsocketAction] WebSocket connection error:', error.message);
           setActiveClobSocketClientReference(null);
           // wsClient.terminate(); // No need to terminate, 'close' will be called
-          const errorContent: Content = { text: `❌ WebSocket Error: ${error.message}` };
+          const errorContent = { text: `❌ WebSocket Error: ${error.message}` };
           if (callback) callback(errorContent);
-          rejectPromise(error);
+          rejectPromise({
+            text: errorContent.text,
+            values: {
+              success: false,
+              error: true,
+            },
+            data: {
+              actionName: 'POLYMARKET_SETUP_WEBSOCKET',
+              error: error.message,
+            },
+            success: false,
+            error: error,
+          });
         });
 
         wsClient.on('close', (code: number, reason: Buffer) => {
@@ -271,7 +362,7 @@ export const setupWebsocketAction: Action = {
 
         // The 'message' handler should primarily live in handleRealtimeUpdatesAction
         // But we can log a generic message here for successful setup
-        wsClient.once('message', (data: WebSocket.RawData) => {
+        wsClient.once('message', (data: any) => {
           logger.info(
             '[setupWebsocketAction] Received first message (indicates successful subscription setup). Further messages handled by POLYMARKET_HANDLE_REALTIME_UPDATES.'
           );
@@ -283,11 +374,23 @@ export const setupWebsocketAction: Action = {
           error
         );
         setActiveClobSocketClientReference(null);
-        const errorContent: Content = {
+        const errorContent = {
           text: `❌ Critical WebSocket Setup Error: ${error.message}`,
         };
         if (callback) callback(errorContent);
-        rejectPromise(error);
+        rejectPromise({
+          text: errorContent.text,
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_SETUP_WEBSOCKET',
+            error: error.message,
+          },
+          success: false,
+          error: error,
+        });
       }
     });
   },

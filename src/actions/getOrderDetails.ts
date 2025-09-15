@@ -1,5 +1,6 @@
 import {
   type Action,
+  type ActionResult,
   type Content,
   type HandlerCallback,
   type IAgentRuntime,
@@ -88,7 +89,7 @@ export const getOrderDetailsAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<Content> => {
+  ): Promise<ActionResult> => {
     logger.info('[getOrderDetailsAction] Handler called!');
 
     let orderId: string | undefined;
@@ -120,7 +121,19 @@ export const getOrderDetailsAction: Action = {
           data: { error: errorMessage },
         };
         if (callback) await callback(errorContent);
-        throw new Error(errorMessage);
+        return {
+          text: errorContent.text,
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_GET_ORDER_DETAILS',
+            error: errorMessage,
+          },
+          success: false,
+          error: new Error(errorMessage),
+        };
       }
     }
 
@@ -133,7 +146,19 @@ export const getOrderDetailsAction: Action = {
         data: { error: errorMessage },
       };
       if (callback) await callback(errorContent);
-      throw new Error(errorMessage);
+      return {
+        text: errorContent.text,
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_ORDER_DETAILS',
+          error: errorMessage,
+        },
+        success: false,
+        error: new Error(errorMessage),
+      };
     }
 
     logger.info(`[getOrderDetailsAction] Attempting to fetch details for Order ID: ${orderId}`);
@@ -150,7 +175,22 @@ export const getOrderDetailsAction: Action = {
           data: { error: 'Order not found', orderId, timestamp: new Date().toISOString() },
         };
         if (callback) await callback(notFoundContent);
-        return notFoundContent;
+        return {
+          text: notFoundContent.text,
+          values: {
+            success: false,
+            orderFound: false,
+            orderId,
+          },
+          data: {
+            actionName: 'POLYMARKET_GET_ORDER_DETAILS',
+            error: 'Order not found',
+            orderId,
+            timestamp: new Date().toISOString(),
+          },
+          success: false,
+          error: new Error('Order not found'),
+        };
       }
 
       const displayOrder = order as OfficialOpenOrder;
@@ -177,7 +217,26 @@ export const getOrderDetailsAction: Action = {
       };
 
       if (callback) await callback(responseContent);
-      return responseContent;
+      return {
+        text: responseText,
+        values: {
+          success: true,
+          orderId: displayOrder.order_id,
+          marketId: displayOrder.market_id,
+          tokenId: displayOrder.token_id,
+          side: displayOrder.side,
+          status: displayOrder.status,
+          price: displayOrder.price,
+          size: displayOrder.size,
+          filledSize: displayOrder.filled_size,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_ORDER_DETAILS',
+          order: displayOrder,
+          timestamp: new Date().toISOString(),
+        },
+        success: true,
+      };
     } catch (error) {
       logger.error(`[getOrderDetailsAction] Error fetching order ${orderId}:`, error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred.';
@@ -187,7 +246,22 @@ export const getOrderDetailsAction: Action = {
         data: { error: errorMessage, orderId, timestamp: new Date().toISOString() },
       };
       if (callback) await callback(errorContent);
-      throw error;
+      return {
+        text: errorContent.text,
+        values: {
+          success: false,
+          error: true,
+          orderId,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_ORDER_DETAILS',
+          error: errorMessage,
+          orderId,
+          timestamp: new Date().toISOString(),
+        },
+        success: false,
+        error: error instanceof Error ? error : new Error(errorMessage),
+      };
     }
   },
 

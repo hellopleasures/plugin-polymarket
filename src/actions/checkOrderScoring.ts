@@ -1,6 +1,6 @@
 import {
   type Action,
-  type Content,
+  type ActionResult,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
@@ -76,7 +76,7 @@ export const checkOrderScoringAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<Content> => {
+  ): Promise<ActionResult> => {
     logger.info('[checkOrderScoringAction] Handler called!');
 
     let llmResult: { orderIds?: string[]; error?: string } = {};
@@ -110,13 +110,21 @@ export const checkOrderScoringAction: Action = {
       } else {
         const errorMessage = 'Please specify one or more Order IDs to check scoring status.';
         logger.error(`[checkOrderScoringAction] Order ID extraction failed. Text: "${text}"`);
-        const errorContent: Content = {
+        const errorResult: ActionResult = {
           text: `❌ **Error**: ${errorMessage}`,
-          actions: ['CHECK_ORDER_SCORING'],
-          data: { error: errorMessage },
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'CHECK_ORDER_SCORING',
+            error: errorMessage,
+          },
+          success: false,
+          error: new Error(errorMessage),
         };
-        if (callback) await callback(errorContent);
-        throw new Error(errorMessage);
+        if (callback) await callback({ text: errorResult.text, data: errorResult.data });
+        return errorResult;
       }
       logger.info(
         `[checkOrderScoringAction] Regex extracted Order IDs: ${JSON.stringify(llmResult.orderIds)}`
@@ -145,35 +153,47 @@ export const checkOrderScoringAction: Action = {
         responseText += 'Could not retrieve scoring status or no valid order IDs provided.';
       }
 
-      const responseContent: Content = {
+      const responseResult: ActionResult = {
         text: responseText,
-        actions: ['CHECK_ORDER_SCORING'],
+        values: {
+          success: true,
+          orderIds: orderIdsToScore,
+          scoringResponse,
+        },
         data: {
+          actionName: 'CHECK_ORDER_SCORING',
           request: apiParams,
           response: scoringResponse,
           timestamp: new Date().toISOString(),
         },
+        success: true,
       };
 
-      if (callback) await callback(responseContent);
-      return responseContent;
+      if (callback) await callback({ text: responseResult.text, data: responseResult.data });
+      return responseResult;
     } catch (error) {
       logger.error(
         `[checkOrderScoringAction] Error checking order scoring for IDs ${orderIdsToScore.join(', ')}:`,
         error
       );
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred.';
-      const errorContent: Content = {
+      const errorResult: ActionResult = {
         text: `❌ **Error checking order scoring**: ${errorMessage}`,
-        actions: ['CHECK_ORDER_SCORING'],
+        values: {
+          success: false,
+          error: true,
+        },
         data: {
+          actionName: 'CHECK_ORDER_SCORING',
           error: errorMessage,
           orderIds: orderIdsToScore,
           timestamp: new Date().toISOString(),
         },
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
       };
-      if (callback) await callback(errorContent);
-      throw error;
+      if (callback) await callback({ text: errorResult.text, data: errorResult.data });
+      return errorResult;
     }
   },
 

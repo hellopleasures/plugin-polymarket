@@ -1,5 +1,6 @@
 import {
   type Action,
+  type ActionResult,
   type Content,
   type HandlerCallback,
   type IAgentRuntime,
@@ -45,7 +46,7 @@ export const retrieveAllMarketsAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<void> => {
+  ): Promise<ActionResult> => {
     logger.info('[retrieveAllMarketsAction] Handler called!');
 
     const clobApiUrl = runtime.getSetting('CLOB_API_URL');
@@ -62,7 +63,19 @@ export const retrieveAllMarketsAction: Action = {
       if (callback) {
         await callback(errorContent);
       }
-      return;
+      return {
+        text: errorMessage,
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_ALL_MARKETS',
+          error: errorMessage,
+        },
+        success: false,
+        error: new Error(errorMessage),
+      };
     }
 
     let filterParams: MarketFilters = {};
@@ -160,7 +173,25 @@ export const retrieveAllMarketsAction: Action = {
         await callback(responseContent);
       }
 
-      return;
+      return {
+        text: responseText,
+        values: {
+          success: true,
+          marketCount,
+          totalCount: response.count || marketCount,
+          hasMoreResults: !!response.next_cursor && response.next_cursor !== 'LTE=',
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_ALL_MARKETS',
+          markets,
+          count: marketCount,
+          total: response.count || marketCount,
+          next_cursor: response.next_cursor,
+          limit: response.limit,
+          filters: filterParams,
+        },
+        success: true,
+      };
     } catch (error) {
       logger.error('[retrieveAllMarketsAction] Error fetching markets:', error);
 
@@ -183,7 +214,20 @@ Please check:
       if (callback) {
         await callback(errorContent);
       }
-      return;
+      return {
+        text: errorContent.text,
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_ALL_MARKETS',
+          error: errorMessage,
+          timestamp: new Date().toISOString(),
+        },
+        success: false,
+        error: error instanceof Error ? error : new Error(errorMessage),
+      };
     }
   },
 

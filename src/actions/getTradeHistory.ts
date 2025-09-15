@@ -1,6 +1,6 @@
 import {
   type Action,
-  type Content,
+  type ActionResult,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
@@ -125,7 +125,7 @@ export const getTradeHistoryAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<Content> => {
+  ): Promise<ActionResult> => {
     logger.info('[getTradeHistoryAction] Handler called!');
     // API key/signer should be handled by initializeClobClient now based on new strategy
 
@@ -216,10 +216,17 @@ export const getTradeHistoryAction: Action = {
         }
       }
 
-      const responseContent: Content = {
+      const responseResult: ActionResult = {
         text: responseText,
-        actions: ['POLYMARKET_GET_TRADE_HISTORY'],
+        values: {
+          success: true,
+          trades: tradesResponse.trades,
+          nextCursor: tradesResponse.next_cursor,
+          count: tradesResponse.count,
+          limit: tradesResponse.limit,
+        },
         data: {
+          actionName: 'POLYMARKET_GET_TRADE_HISTORY',
           ...apiParams,
           trades: tradesResponse.trades,
           nextCursor: tradesResponse.next_cursor,
@@ -227,20 +234,31 @@ export const getTradeHistoryAction: Action = {
           limit: tradesResponse.limit,
           timestamp: new Date().toISOString(),
         },
+        success: true,
       };
 
-      if (callback) await callback(responseContent);
-      return responseContent;
+      if (callback) await callback({ text: responseResult.text, data: responseResult.data });
+      return responseResult;
     } catch (error) {
       logger.error('[getTradeHistoryAction] Error fetching trade history:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred.';
-      const errorContent: Content = {
+      const errorResult: ActionResult = {
         text: `❌ **Error fetching trade history**: ${errorMessage}`,
-        actions: ['POLYMARKET_GET_TRADE_HISTORY'],
-        data: { error: errorMessage, params: apiParams, timestamp: new Date().toISOString() },
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_TRADE_HISTORY',
+          error: errorMessage,
+          params: apiParams,
+          timestamp: new Date().toISOString(),
+        },
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
       };
-      if (callback) await callback(errorContent);
-      throw error;
+      if (callback) await callback({ text: errorResult.text, data: errorResult.data });
+      return errorResult;
     }
   },
 

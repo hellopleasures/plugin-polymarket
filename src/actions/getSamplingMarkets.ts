@@ -1,5 +1,6 @@
 import {
   type Action,
+  type ActionResult,
   type IAgentRuntime,
   type Memory,
   type State,
@@ -55,7 +56,7 @@ export const getSamplingMarkets: Action = {
     state: State | undefined,
     _options: any,
     callback?: HandlerCallback
-  ): Promise<void> => {
+  ): Promise<ActionResult> => {
     try {
       logger.info('[getSamplingMarkets] Starting sampling markets retrieval');
 
@@ -107,7 +108,23 @@ export const getSamplingMarkets: Action = {
         });
       }
 
-      return;
+      return {
+        text: responseMessage,
+        values: {
+          success: true,
+          marketCount: markets.length,
+          totalCount,
+          hasMoreResults: !!nextCursor && nextCursor !== 'LTE=',
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_SAMPLING_MARKETS',
+          markets: markets,
+          count: totalCount,
+          next_cursor: nextCursor,
+          timestamp: new Date().toISOString(),
+        },
+        success: true,
+      };
     } catch (error) {
       logger.error('[getSamplingMarkets] Error retrieving sampling markets:', error);
 
@@ -129,7 +146,20 @@ Please check:
         });
       }
 
-      return;
+      return {
+        text: errorMessage,
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_SAMPLING_MARKETS',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+        success: false,
+        error: error instanceof Error ? error : new Error('Unknown error'),
+      };
     }
   },
 

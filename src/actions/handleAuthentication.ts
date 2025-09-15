@@ -82,9 +82,18 @@ export const handleAuthenticationAction: Action = {
         'A private key is required to derive API keys. Provide privateKeyInput parameter or set WALLET_PRIVATE_KEY/POLYMARKET_PRIVATE_KEY in agent settings.';
       logger.error(`[handleAuthenticationAction] ${errMsg}`);
       const errorResult: ActionResult = {
-        success: false,
         text: `❌ Error: ${errMsg}`,
-        data: { error: errMsg, timestamp: new Date().toISOString() },
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_HANDLE_AUTHENTICATION',
+          error: errMsg,
+          timestamp: new Date().toISOString(),
+        },
+        success: false,
+        error: new Error(errMsg),
       };
       if (callback) await callback({ text: errorResult.text, data: errorResult.data });
       return errorResult;
@@ -132,9 +141,18 @@ export const handleAuthenticationAction: Action = {
         const apiErrorMessage = apiError instanceof Error ? apiError.message : 'Unknown API error';
         const errMsg = `Failed to create/derive API key from Polymarket: ${apiErrorMessage}`;
         const errorResult: ActionResult = {
-          success: false,
           text: `❌ Error: ${errMsg}`,
-          data: { error: errMsg, timestamp: new Date().toISOString() },
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_HANDLE_AUTHENTICATION',
+            error: errMsg,
+            timestamp: new Date().toISOString(),
+          },
+          success: false,
+          error: new Error(errMsg),
         };
         if (callback) await callback({ text: errorResult.text, data: errorResult.data });
         return errorResult;
@@ -154,9 +172,18 @@ export const handleAuthenticationAction: Action = {
         const errMsg =
           'Failed to derive valid API credentials from Polymarket. The response was unexpected.';
         const errorResult: ActionResult = {
-          success: false,
           text: `❌ Error: ${errMsg}`,
-          data: { error: errMsg, timestamp: new Date().toISOString() },
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_HANDLE_AUTHENTICATION',
+            error: errMsg,
+            timestamp: new Date().toISOString(),
+          },
+          success: false,
+          error: new Error(errMsg),
         };
         if (callback) await callback({ text: errorResult.text, data: errorResult.data });
         return errorResult;
@@ -205,9 +232,19 @@ export const handleAuthenticationAction: Action = {
       responseText += `\n\nThese credentials have been set for immediate use by the Polymarket plugin.`;
 
       const responseResult: ActionResult = {
-        success: true,
         text: responseText,
-        data: { derivedCreds: storedCreds, timestamp: new Date().toISOString() },
+        values: {
+          success: true,
+          apiKeyId: storedCreds.key_id,
+          hasLabel: !!storedCreds.label,
+          hasExpiration: !!storedCreds.expiration_timestamp_ms,
+        },
+        data: {
+          actionName: 'POLYMARKET_HANDLE_AUTHENTICATION',
+          derivedCreds: storedCreds,
+          timestamp: new Date().toISOString(),
+        },
+        success: true,
       };
 
       if (callback) await callback({ text: responseResult.text, data: responseResult.data });
@@ -216,9 +253,18 @@ export const handleAuthenticationAction: Action = {
       logger.error('[handleAuthenticationAction] Error deriving API key:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred.';
       const errorResult: ActionResult = {
-        success: false,
         text: `❌ **Error deriving API key**: ${errorMessage}`,
-        data: { error: errorMessage, timestamp: new Date().toISOString() },
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_HANDLE_AUTHENTICATION',
+          error: errorMessage,
+          timestamp: new Date().toISOString(),
+        },
+        success: false,
+        error: error instanceof Error ? error : new Error(errorMessage),
       };
       if (callback) await callback({ text: errorResult.text, data: errorResult.data });
       return errorResult;

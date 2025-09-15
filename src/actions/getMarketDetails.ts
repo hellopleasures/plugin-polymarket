@@ -1,13 +1,11 @@
 import {
   type Action,
-  type Content,
+  type ActionResult,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
   type State,
   logger,
-  ModelType,
-  composePromptFromState,
 } from '@elizaos/core';
 import { callLLMWithTimeout } from '../utils/llmHelpers';
 import { initializeClobClient } from '../utils/clobClient';
@@ -52,7 +50,7 @@ export const getMarketDetailsAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<Content> => {
+  ): Promise<ActionResult> => {
     logger.info('[getMarketDetailsAction] Handler called!');
 
     const clobApiUrl = runtime.getSetting('CLOB_API_URL');
@@ -60,16 +58,24 @@ export const getMarketDetailsAction: Action = {
     if (!clobApiUrl) {
       const errorMessage = 'CLOB_API_URL is required in configuration.';
       logger.error(`[getMarketDetailsAction] Configuration error: ${errorMessage}`);
-      const errorContent: Content = {
+      const errorResult: ActionResult = {
         text: errorMessage,
-        actions: ['POLYMARKET_GET_MARKET_DETAILS'],
-        data: { error: errorMessage },
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_MARKET_DETAILS',
+          error: errorMessage,
+        },
+        success: false,
+        error: new Error(errorMessage),
       };
 
       if (callback) {
-        await callback(errorContent);
+        await callback({ text: errorResult.text, data: errorResult.data });
       }
-      throw new Error(errorMessage);
+      return errorResult;
     }
 
     let conditionId = '';
@@ -86,20 +92,28 @@ export const getMarketDetailsAction: Action = {
       if (llmResult?.error) {
         const errorMessage = 'Market identifier not found. Please specify a market condition ID.';
         logger.error(`[getMarketDetailsAction] Parameter extraction error: ${errorMessage}`);
-        const errorContent: Content = {
+        const errorResult: ActionResult = {
           text: `❌ **Error**: ${errorMessage}
 
 Please provide a market condition ID in your request. For example:
 • "Show me market 0x1234567890abcdef..."
 • "Get details for condition ID 0xabc123..."`,
-          actions: ['POLYMARKET_GET_MARKET_DETAILS'],
-          data: { error: errorMessage },
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_GET_MARKET_DETAILS',
+            error: errorMessage,
+          },
+          success: false,
+          error: new Error(errorMessage),
         };
 
         if (callback) {
-          await callback(errorContent);
+          await callback({ text: errorResult.text, data: errorResult.data });
         }
-        throw new Error(errorMessage);
+        return errorResult;
       }
 
       conditionId = llmResult?.marketId || '';
@@ -118,20 +132,28 @@ Please provide a market condition ID in your request. For example:
         'Unable to extract market condition ID from your message. Please provide a valid condition ID.';
       logger.error('[getMarketDetailsAction] LLM parameter extraction failed:', error);
 
-      const errorContent: Content = {
+      const errorResult: ActionResult = {
         text: `❌ **Error**: ${errorMessage}
 
 Please provide a market condition ID in your request. For example:
 • "Show me market 0x1234567890abcdef..."
 • "Get details for condition ID 0xabc123..."`,
-        actions: ['POLYMARKET_GET_MARKET_DETAILS'],
-        data: { error: errorMessage },
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_MARKET_DETAILS',
+          error: errorMessage,
+        },
+        success: false,
+        error: new Error(errorMessage),
       };
 
       if (callback) {
-        await callback(errorContent);
+        await callback({ text: errorResult.text, data: errorResult.data });
       }
-      throw new Error(errorMessage);
+      return errorResult;
     }
 
     try {
@@ -198,21 +220,27 @@ Please provide a market condition ID in your request. For example:
         responseText += `• FPMM Address: \`${market.fpmm}\`\n`;
       }
 
-      const responseContent: Content = {
+      const responseResult: ActionResult = {
         text: responseText,
-        actions: ['POLYMARKET_GET_MARKET_DETAILS'],
+        values: {
+          success: true,
+          market,
+          conditionId,
+        },
         data: {
+          actionName: 'POLYMARKET_GET_MARKET_DETAILS',
           market,
           conditionId,
           timestamp: new Date().toISOString(),
         },
+        success: true,
       };
 
       if (callback) {
-        await callback(responseContent);
+        await callback({ text: responseResult.text, data: responseResult.data });
       }
 
-      return responseContent;
+      return responseResult;
     } catch (error) {
       logger.error('[getMarketDetailsAction] Error fetching market details:', error);
 
@@ -220,7 +248,7 @@ Please provide a market condition ID in your request. For example:
         error instanceof Error
           ? error.message
           : 'Unknown error occurred while fetching market details';
-      const errorContent: Content = {
+      const errorResult: ActionResult = {
         text: `❌ **Error retrieving market details**: ${errorMessage}
 
 Please check:
@@ -230,18 +258,24 @@ Please check:
 • Polymarket CLOB service is operational
 
 **Condition ID provided**: \`${conditionId}\``,
-        actions: ['POLYMARKET_GET_MARKET_DETAILS'],
+        values: {
+          success: false,
+          error: true,
+        },
         data: {
+          actionName: 'POLYMARKET_GET_MARKET_DETAILS',
           error: errorMessage,
           conditionId,
           timestamp: new Date().toISOString(),
         },
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
       };
 
       if (callback) {
-        await callback(errorContent);
+        await callback({ text: errorResult.text, data: errorResult.data });
       }
-      throw error;
+      return errorResult;
     }
   },
 

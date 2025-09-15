@@ -1,6 +1,6 @@
 import {
   type Action,
-  type Content,
+  type ActionResult,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
@@ -53,7 +53,7 @@ export const getSpreadAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<void> => {
+  ): Promise<ActionResult> => {
     try {
       logger.info('[getSpreadAction] Starting spread retrieval process');
 
@@ -102,21 +102,29 @@ export const getSpreadAction: Action = {
           const errorMessage = 'Please provide a token ID to get the spread for.';
           logger.error(`[getSpreadAction] Token ID extraction failed`);
 
-          const errorContent: Content = {
+          const errorResult: ActionResult = {
             text: `❌ **Error**: ${errorMessage}
 
 Please provide a token ID in your request. Examples:
 • "Get spread for token 123456"
 • "What's the spread for market token 789012?"
 • "Show me the bid-ask spread for 456789"`,
-            actions: ['POLYMARKET_GET_SPREAD'],
-            data: { error: errorMessage },
+            values: {
+              success: false,
+              error: true,
+            },
+            data: {
+              actionName: 'POLYMARKET_GET_SPREAD',
+              error: errorMessage,
+            },
+            success: false,
+            error: new Error(errorMessage),
           };
 
           if (callback) {
-            await callback(errorContent);
+            await callback({ text: errorResult.text, data: errorResult.data });
           }
-          return;
+          return errorResult;
         }
       }
 
@@ -142,23 +150,31 @@ Please provide a token ID in your request. Examples:
 
 *The spread represents the difference between the best ask and best bid prices.*`;
 
-      const responseContent: Content = {
+      const responseResult: ActionResult = {
         text: successMessage,
-        actions: ['POLYMARKET_GET_SPREAD'],
+        values: {
+          success: true,
+          tokenId,
+          spread: spreadResponse.spread,
+          formattedSpread,
+          percentageSpread,
+        },
         data: {
+          actionName: 'POLYMARKET_GET_SPREAD',
           tokenId,
           spread: spreadResponse.spread,
           formattedSpread,
           percentageSpread,
           timestamp: new Date().toISOString(),
         },
+        success: true,
       };
 
       if (callback) {
-        await callback(responseContent);
+        await callback({ text: responseResult.text, data: responseResult.data });
       }
 
-      return;
+      return responseResult;
     } catch (error) {
       logger.error('[getSpreadAction] Error getting spread:', error);
 
@@ -169,19 +185,25 @@ Please check:
 • CLOB_API_URL is correctly configured
 • Network connectivity is available`;
 
-      const errorContent: Content = {
+      const errorResult: ActionResult = {
         text: errorMessage,
-        actions: ['POLYMARKET_GET_SPREAD'],
+        values: {
+          success: false,
+          error: true,
+        },
         data: {
+          actionName: 'POLYMARKET_GET_SPREAD',
           error: error instanceof Error ? error.message : String(error),
           timestamp: new Date().toISOString(),
         },
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
       };
 
       if (callback) {
-        await callback(errorContent);
+        await callback({ text: errorResult.text, data: errorResult.data });
       }
-      return;
+      return errorResult;
     }
   },
   examples: [

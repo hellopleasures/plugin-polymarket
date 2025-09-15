@@ -1,6 +1,6 @@
 import {
   type Action,
-  type Content,
+  type ActionResult,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
@@ -64,7 +64,7 @@ export const getMidpointPriceAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<Content> => {
+  ): Promise<ActionResult> => {
     logger.info('[getMidpointPriceAction] Handler called!');
 
     const clobApiUrl = runtime.getSetting('CLOB_API_URL');
@@ -72,16 +72,24 @@ export const getMidpointPriceAction: Action = {
     if (!clobApiUrl) {
       const errorMessage = 'CLOB_API_URL is required in configuration.';
       logger.error(`[getMidpointPriceAction] Configuration error: ${errorMessage}`);
-      const errorContent: Content = {
+      const errorResult: ActionResult = {
         text: errorMessage,
-        actions: ['POLYMARKET_GET_MIDPOINT_PRICE'],
-        data: { error: errorMessage },
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_MIDPOINT_PRICE',
+          error: errorMessage,
+        },
+        success: false,
+        error: new Error(errorMessage),
       };
 
       if (callback) {
-        await callback(errorContent);
+        await callback({ text: errorResult.text, data: errorResult.data });
       }
-      throw new Error(errorMessage);
+      return errorResult;
     }
 
     let tokenId: string;
@@ -120,21 +128,29 @@ export const getMidpointPriceAction: Action = {
         const errorMessage = 'Please provide a token ID to get the midpoint price for.';
         logger.error(`[getMidpointPriceAction] Token ID extraction failed`);
 
-        const errorContent: Content = {
+        const errorResult: ActionResult = {
           text: `❌ **Error**: ${errorMessage}
 
 Please provide a token ID in your request. Examples:
 • "Get midpoint price for token 123456"
 • "What's the midpoint for market token 789012?"
 • "Show me the mid price for 456789"`,
-          actions: ['POLYMARKET_GET_MIDPOINT_PRICE'],
-          data: { error: errorMessage },
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_GET_MIDPOINT_PRICE',
+            error: errorMessage,
+          },
+          success: false,
+          error: new Error(errorMessage),
         };
 
         if (callback) {
-          await callback(errorContent);
+          await callback({ text: errorResult.text, data: errorResult.data });
         }
-        throw new Error(errorMessage);
+        return errorResult;
       }
     }
 
@@ -157,28 +173,36 @@ Please provide a token ID in your request. Examples:
 
 The midpoint price represents the halfway point between the best bid and best ask prices, providing a fair market value estimate for this prediction market token.`;
 
-      const responseContent: Content = {
+      const responseResult: ActionResult = {
         text: responseText,
-        actions: ['POLYMARKET_GET_MIDPOINT_PRICE'],
+        values: {
+          success: true,
+          tokenId,
+          midpoint: midpointResponse.mid,
+          formattedPrice,
+          percentagePrice,
+        },
         data: {
+          actionName: 'POLYMARKET_GET_MIDPOINT_PRICE',
           tokenId,
           midpoint: midpointResponse.mid,
           formattedPrice,
           percentagePrice,
           timestamp: new Date().toISOString(),
         },
+        success: true,
       };
 
       if (callback) {
-        await callback(responseContent);
+        await callback({ text: responseResult.text, data: responseResult.data });
       }
 
-      return responseContent;
+      return responseResult;
     } catch (error) {
       logger.error('[getMidpointPriceAction] Error fetching midpoint price:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
 
-      const errorContent: Content = {
+      const errorResult: ActionResult = {
         text: `❌ **Error getting midpoint price**: ${errorMessage}
 
 Please check:
@@ -187,18 +211,24 @@ Please check:
 • Network connectivity is available
 
 **Token ID**: \`${tokenId}\``,
-        actions: ['POLYMARKET_GET_MIDPOINT_PRICE'],
+        values: {
+          success: false,
+          error: true,
+        },
         data: {
+          actionName: 'POLYMARKET_GET_MIDPOINT_PRICE',
           error: errorMessage,
           tokenId,
           timestamp: new Date().toISOString(),
         },
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
       };
 
       if (callback) {
-        await callback(errorContent);
+        await callback({ text: errorResult.text, data: errorResult.data });
       }
-      throw error;
+      return errorResult;
     }
   },
 

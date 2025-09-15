@@ -1,6 +1,6 @@
 import {
   type Action,
-  type Content,
+  type ActionResult,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
@@ -73,7 +73,7 @@ export const placeOrderAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<void> => {
+  ): Promise<ActionResult> => {
     logger.info('[placeOrderAction] Handler called!');
 
     const clobApiUrl = runtime.getSetting('CLOB_API_URL');
@@ -81,16 +81,24 @@ export const placeOrderAction: Action = {
     if (!clobApiUrl) {
       const errorMessage = 'CLOB_API_URL is required in configuration.';
       logger.error(`[placeOrderAction] Configuration error: ${errorMessage}`);
-      const errorContent: Content = {
+      const errorResult: ActionResult = {
         text: errorMessage,
-        actions: ['PLACE_ORDER'],
-        data: { error: errorMessage },
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'PLACE_ORDER',
+          error: errorMessage,
+        },
+        success: false,
+        error: new Error(errorMessage),
       };
 
       if (callback) {
-        await callback(errorContent);
+        await callback({ text: errorResult.text, data: errorResult.data });
       }
-      return;
+      return errorResult;
     }
 
     let tokenId: string;
@@ -168,7 +176,7 @@ export const placeOrderAction: Action = {
         const errorMessage = 'Please provide valid order parameters: token ID, price, and size.';
         logger.error(`[placeOrderAction] Parameter extraction failed`);
 
-        const errorContent: Content = {
+        const errorResult: ActionResult = {
           text: `❌ **Error**: ${errorMessage}
 
 Please provide order details in your request. Examples:
@@ -185,14 +193,22 @@ Please provide order details in your request. Examples:
 **Optional parameters:**
 - Order type (GTC/limit, FOK/market, GTD, FAK)
 - Fee rate (in basis points)`,
-          actions: ['PLACE_ORDER'],
-          data: { error: errorMessage },
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'PLACE_ORDER',
+            error: errorMessage,
+          },
+          success: false,
+          error: new Error(errorMessage),
         };
 
         if (callback) {
-          await callback(errorContent);
+          await callback({ text: errorResult.text, data: errorResult.data });
         }
-        return;
+        return errorResult;
       }
     }
 
@@ -235,19 +251,83 @@ Please provide order details in your request. Examples:
         // Check for specific error types
         if (createError instanceof Error) {
           if (createError.message.includes('minimum_tick_size')) {
-            logger.error(
-              `Invalid market data: The market may not exist or be inactive. Please verify the token ID is correct and the market is active.`
-            );
-            return;
+            const errorMsg = `Invalid market data: The market may not exist or be inactive. Please verify the token ID is correct and the market is active.`;
+            logger.error(errorMsg);
+            const errorResult: ActionResult = {
+              text: `❌ **Order Error**: ${errorMsg}`,
+              values: {
+                success: false,
+                error: true,
+                tokenId,
+                side,
+                price,
+                size,
+              },
+              data: {
+                actionName: 'PLACE_ORDER',
+                error: errorMsg,
+                orderDetails: { tokenId, side, price, size, orderType },
+              },
+              success: false,
+              error: createError,
+            };
+            if (callback) {
+              await callback({ text: errorResult.text, data: errorResult.data });
+            }
+            return errorResult;
           }
           if (createError.message.includes('undefined is not an object')) {
-            logger.error(
-              `Market data unavailable: The token ID may be invalid or the market may be closed.`
-            );
-            return;
+            const errorMsg = `Market data unavailable: The token ID may be invalid or the market may be closed.`;
+            logger.error(errorMsg);
+            const errorResult: ActionResult = {
+              text: `❌ **Order Error**: ${errorMsg}`,
+              values: {
+                success: false,
+                error: true,
+                tokenId,
+                side,
+                price,
+                size,
+              },
+              data: {
+                actionName: 'PLACE_ORDER',
+                error: errorMsg,
+                orderDetails: { tokenId, side, price, size, orderType },
+              },
+              success: false,
+              error: createError,
+            };
+            if (callback) {
+              await callback({ text: errorResult.text, data: errorResult.data });
+            }
+            return errorResult;
           }
         }
-        return;
+        // Generic error fallback
+        const genericErrorMsg =
+          createError instanceof Error ? createError.message : 'Failed to create order';
+        const errorResult: ActionResult = {
+          text: `❌ **Order Creation Failed**: ${genericErrorMsg}`,
+          values: {
+            success: false,
+            error: true,
+            tokenId,
+            side,
+            price,
+            size,
+          },
+          data: {
+            actionName: 'PLACE_ORDER',
+            error: genericErrorMsg,
+            orderDetails: { tokenId, side, price, size, orderType },
+          },
+          success: false,
+          error: createError instanceof Error ? createError : new Error(genericErrorMsg),
+        };
+        if (callback) {
+          await callback({ text: errorResult.text, data: errorResult.data });
+        }
+        return errorResult;
       }
 
       // Post the order with enhanced error handling
@@ -257,10 +337,30 @@ Please provide order details in your request. Examples:
         logger.info(`[placeOrderAction] Order posted successfully`);
       } catch (postError) {
         logger.error(`[placeOrderAction] Error posting order:`, postError);
-        logger.error(
-          `Failed to submit order: ${postError instanceof Error ? postError.message : 'Unknown error'}`
-        );
-        return;
+        const postErrorMsg = `Failed to submit order: ${postError instanceof Error ? postError.message : 'Unknown error'}`;
+        logger.error(postErrorMsg);
+        const errorResult: ActionResult = {
+          text: `❌ **Order Submission Failed**: ${postErrorMsg}`,
+          values: {
+            success: false,
+            error: true,
+            tokenId,
+            side,
+            price,
+            size,
+          },
+          data: {
+            actionName: 'PLACE_ORDER',
+            error: postErrorMsg,
+            orderDetails: { tokenId, side, price, size, orderType },
+          },
+          success: false,
+          error: postError instanceof Error ? postError : new Error(postErrorMsg),
+        };
+        if (callback) {
+          await callback({ text: errorResult.text, data: errorResult.data });
+        }
+        return errorResult;
       }
 
       // Format response based on success
@@ -348,7 +448,7 @@ Please check your parameters and try again. Common issues:
         };
       }
 
-      const responseContent: Content = {
+      const responseContent = {
         text: responseText,
         actions: ['POLYMARKET_PLACE_ORDER'],
         data: responseData,
@@ -358,13 +458,35 @@ Please check your parameters and try again. Common issues:
         await callback(responseContent);
       }
 
-      return;
+      const isSuccess = orderResponse.success;
+      return {
+        text: responseText,
+        values: {
+          success: isSuccess,
+          orderId: orderResponse.orderId,
+          status: orderResponse.status,
+          tokenId,
+          side,
+          price,
+          size,
+          orderType,
+          totalValue: price * size,
+        },
+        data: {
+          actionName: 'POLYMARKET_PLACE_ORDER',
+          ...responseData,
+        },
+        success: isSuccess,
+        error: isSuccess
+          ? undefined
+          : new Error(orderResponse.errorMsg || 'Order placement failed'),
+      };
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error occurred while placing order';
       logger.error(`[placeOrderAction] Order placement error:`, error);
 
-      const errorContent: Content = {
+      const errorResult: ActionResult = {
         text: `❌ **Order Placement Error**
 
 **Error**: ${errorMessage}
@@ -380,17 +502,27 @@ Please check your configuration and try again. Make sure:
 • Token ID is valid and active
 • Price and size are within acceptable ranges
 • Network connection is stable`,
-        actions: ['POLYMARKET_PLACE_ORDER'],
+        values: {
+          success: false,
+          error: true,
+          tokenId,
+          side,
+          price,
+          size,
+        },
         data: {
+          actionName: 'POLYMARKET_PLACE_ORDER',
           error: errorMessage,
           orderDetails: { tokenId, side, price, size, orderType },
         },
+        success: false,
+        error: error instanceof Error ? error : new Error(errorMessage),
       };
 
       if (callback) {
-        await callback(errorContent);
+        await callback({ text: errorResult.text, data: errorResult.data });
       }
-      return;
+      return errorResult;
     }
   },
 

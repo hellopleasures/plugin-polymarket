@@ -1,5 +1,6 @@
 import {
   type Action,
+  type ActionResult,
   type Content,
   type HandlerCallback,
   type IAgentRuntime,
@@ -51,7 +52,7 @@ function registerEventHandlers(
   // wsClient.removeAllListeners('error');
   // wsClient.removeAllListeners('close');
 
-  wsClient.on('message', (rawData: WebSocket.RawData) => {
+  wsClient.on('message', (rawData: any) => {
     const messageString = rawData.toString();
     logger.info(`[WS Event] Message: ${messageString}`);
     try {
@@ -96,7 +97,7 @@ function registerEventHandlers(
   });
 
   wsClient.on('error', (error: Error) => {
-    logger.error('[WS Event] Error:', error);
+    logger.error('[WS Event] Error:', error.message);
     const notification: Content = {
       text: `⚠️ **WebSocket Error**: ${error.message || 'An unknown WebSocket error occurred.'} `,
       data: {
@@ -154,15 +155,28 @@ export const handleRealtimeUpdatesAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<Content> => {
+  ): Promise<ActionResult> => {
     logger.info('[handleRealtimeUpdatesAction] Handler called.');
 
     if (!activeWebSocketClient) {
       const errorMsg =
         'No active Polymarket WebSocket client (ws). Please run SETUP_WEBSOCKET first to connect.';
       logger.warn(`[handleRealtimeUpdatesAction] ${errorMsg}`);
-      if (callback) await callback({ text: `🟡 ${errorMsg}` });
-      return { text: `🟡 ${errorMsg}` };
+      const warningResult: ActionResult = {
+        text: `🟡 ${errorMsg}`,
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_HANDLE_REALTIME_UPDATES',
+          error: errorMsg,
+        },
+        success: false,
+        error: new Error(errorMsg),
+      };
+      if (callback) await callback({ text: warningResult.text, data: warningResult.data });
+      return warningResult;
     }
 
     try {
@@ -181,24 +195,41 @@ export const handleRealtimeUpdatesAction: Action = {
 
       const responseText =
         '👂 Event listeners for Polymarket WebSocket (ws) updates are now active (or re-confirmed).';
-      const responseContent: Content = {
+      const responseResult: ActionResult = {
         text: responseText,
+        values: {
+          success: true,
+          status: 'listening',
+          clientState: activeWebSocketClient.readyState,
+        },
         data: {
+          actionName: 'POLYMARKET_HANDLE_REALTIME_UPDATES',
           status: 'listening',
           clientState: activeWebSocketClient.readyState,
           timestamp: new Date().toISOString(),
         },
+        success: true,
       };
-      return responseContent;
+      return responseResult;
     } catch (error: any) {
       logger.error('[handleRealtimeUpdatesAction] Error setting up event handlers:', error);
       const errorMessage = error.message || 'Unknown error.';
-      const errorContent: Content = {
+      const errorResult: ActionResult = {
         text: `❌ **Error setting up WebSocket event handlers**: ${errorMessage}`,
-        data: { error: errorMessage, timestamp: new Date().toISOString() },
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_HANDLE_REALTIME_UPDATES',
+          error: errorMessage,
+          timestamp: new Date().toISOString(),
+        },
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
       };
-      if (callback) await callback(errorContent);
-      throw error;
+      if (callback) await callback({ text: errorResult.text, data: errorResult.data });
+      return errorResult;
     }
   },
 

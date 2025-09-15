@@ -1,4 +1,4 @@
-import { IAgentRuntime, Memory, State, HandlerCallback, logger } from '@elizaos/core';
+import { IAgentRuntime, Memory, State, HandlerCallback, logger, ActionResult } from '@elizaos/core';
 import { initializeClobClientWithCreds } from '../utils/clobClient';
 
 export interface ApiKeyData {
@@ -104,7 +104,7 @@ export const getAllApiKeysAction = {
     state: State,
     options: any,
     callback: HandlerCallback
-  ): Promise<void> => {
+  ): Promise<ActionResult> => {
     logger.info('[getAllApiKeysAction] Handler called!');
 
     try {
@@ -115,12 +115,15 @@ export const getAllApiKeysAction = {
         runtime.getSetting('CLOB_API_PASSPHRASE') || runtime.getSetting('CLOB_PASS_PHRASE');
 
       logger.info('[getAllApiKeysAction] Checking for API credentials...');
-      logger.info('[getAllApiKeysAction] Found credentials:', {
-        hasApiKey: !!apiKey,
-        hasApiSecret: !!apiSecret,
-        hasApiPassphrase: !!apiPassphrase,
-        apiKeySource: apiKey ? (runtime.getSetting('CLOB_API_KEY') ? 'runtime' : 'env') : 'none',
-      });
+      logger.info(
+        '[getAllApiKeysAction] Found credentials:',
+        JSON.stringify({
+          hasApiKey: !!apiKey,
+          hasApiSecret: !!apiSecret,
+          hasApiPassphrase: !!apiPassphrase,
+          apiKeySource: apiKey ? (runtime.getSetting('CLOB_API_KEY') ? 'runtime' : 'env') : 'none',
+        })
+      );
 
       if (!apiKey || !apiSecret || !apiPassphrase) {
         const helpMessage = `❌ **Failed to Retrieve API Keys**
@@ -146,17 +149,28 @@ export const getAllApiKeysAction = {
 • CLOB_SECRET (instead of CLOB_API_SECRET)
 • CLOB_PASS_PHRASE (instead of CLOB_API_PASSPHRASE)`;
 
+        const errorResult: ActionResult = {
+          text: helpMessage,
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_GET_API_KEYS',
+            success: false,
+            error: 'API credentials not found - see setup instructions above',
+          },
+          success: false,
+          error: new Error('API credentials not found'),
+        };
+
         if (callback) {
           callback({
             text: helpMessage,
-            action: 'POLYMARKET_GET_API_KEYS',
-            data: {
-              success: false,
-              error: 'API credentials not found - see setup instructions above',
-            },
+            data: errorResult.data,
           });
         }
-        return;
+        return errorResult;
       }
 
       // Initialize CLOB client with API credentials
@@ -292,16 +306,32 @@ export const getAllApiKeysAction = {
 - Each API key provides L2 authentication for order posting
 - You can revoke unused keys with the DELETE_API_KEY action`;
 
+      // Create ActionResult
+      const successResult: ActionResult = {
+        text: successMessage,
+        values: {
+          success: true,
+          apiKeys: responseData.apiKeys,
+          count: responseData.count,
+          address: responseData.address,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_API_KEYS',
+          ...responseData,
+        },
+        success: true,
+      };
+
       // Call callback with success response
       if (callback) {
         await callback({
           text: successMessage,
-          action: 'POLYMARKET_GET_API_KEYS',
-          data: responseData,
+          data: successResult.data,
         });
       }
 
       logger.info('[getAllApiKeysAction] API keys retrieval completed successfully');
+      return successResult;
     } catch (error) {
       logger.error('[getAllApiKeysAction] Error retrieving API keys:', error);
 
@@ -320,16 +350,29 @@ export const getAllApiKeysAction = {
 • Verify your CLOB_API_KEY, CLOB_API_SECRET, and CLOB_API_PASSPHRASE are correct
 • Check your network connection and try again`;
 
+      const errorResult: ActionResult = {
+        text: errorMessage,
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_API_KEYS',
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        },
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      };
+
       if (callback) {
         callback({
           text: errorMessage,
-          action: 'POLYMARKET_GET_API_KEYS',
-          data: {
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          },
+          data: errorResult.data,
         });
       }
+
+      return errorResult;
     }
   },
 };

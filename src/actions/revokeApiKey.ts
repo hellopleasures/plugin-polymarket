@@ -1,4 +1,12 @@
-import { Action, IAgentRuntime, Memory, State, HandlerCallback, logger } from '@elizaos/core';
+import {
+  Action,
+  ActionResult,
+  IAgentRuntime,
+  Memory,
+  State,
+  HandlerCallback,
+  logger,
+} from '@elizaos/core';
 import { initializeClobClient } from '../utils/clobClient';
 import { callLLMWithTimeout } from '../utils/llmHelpers';
 import { ethers } from 'ethers';
@@ -85,7 +93,7 @@ export const revokeApiKeyAction: Action = {
     state: State,
     options: any,
     callback: HandlerCallback
-  ): Promise<void> => {
+  ): Promise<ActionResult> => {
     logger.info('[revokeApiKeyAction] Handler called!');
 
     try {
@@ -149,7 +157,19 @@ Examples:
             },
           });
         }
-        return;
+        return {
+          text: errorMessage,
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_DELETE_API_KEY',
+            error: 'No valid API key ID provided',
+          },
+          success: false,
+          error: new Error('No valid API key ID provided'),
+        };
       }
 
       const apiKeyId = apiKeyIdString.trim();
@@ -261,6 +281,20 @@ If you need API access, use the CREATE_API_KEY action to generate new credential
       }
 
       logger.info('[revokeApiKeyAction] API key revocation completed successfully');
+
+      return {
+        text: successMessage,
+        values: {
+          success: true,
+          apiKeyId: responseData.apiKeyId,
+          revokedAt: responseData.revokedAt,
+        },
+        data: {
+          actionName: 'POLYMARKET_DELETE_API_KEY',
+          revocation: responseData,
+        },
+        success: true,
+      };
     } catch (error) {
       logger.error('[revokeApiKeyAction] Error revoking API key:', error);
 
@@ -290,6 +324,20 @@ If you need API access, use the CREATE_API_KEY action to generate new credential
           },
         });
       }
+
+      return {
+        text: errorMessage,
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_DELETE_API_KEY',
+          error: error instanceof Error ? error.message : 'Unknown error',
+        },
+        success: false,
+        error: error instanceof Error ? error : new Error('Unknown error'),
+      };
     }
   },
 };

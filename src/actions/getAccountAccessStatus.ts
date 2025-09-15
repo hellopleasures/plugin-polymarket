@@ -1,6 +1,6 @@
 import {
   type Action,
-  type Content,
+  type ActionResult,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
@@ -57,7 +57,7 @@ export const getAccountAccessStatusAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<Content> => {
+  ): Promise<ActionResult> => {
     logger.info('[getAccountAccessStatusAction] Handler called!');
 
     try {
@@ -169,34 +169,52 @@ export const getAccountAccessStatusAction: Action = {
         responseText += `No specific API key is currently active for this session (beyond any .env configured managed keys).\n`;
       }
 
-      const responseContent: Content = {
+      const responseResult: ActionResult = {
         text: responseText,
-        actions: ['POLYMARKET_GET_ACCOUNT_ACCESS_STATUS'],
-        data: {
+        values: {
+          success: true,
           certRequired,
-          managedApiKeys: apiKeysList, // Renamed for clarity
+          managedApiKeys: apiKeysList,
+          activeSessionKey: sessionApiKeyId
+            ? { id: sessionApiKeyId, label: sessionApiLabel, source: sessionApiSource }
+            : undefined,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_ACCOUNT_ACCESS_STATUS',
+          certRequired,
+          managedApiKeys: apiKeysList,
           activeSessionKey: sessionApiKeyId
             ? { id: sessionApiKeyId, label: sessionApiLabel, source: sessionApiSource }
             : undefined,
           error: apiKeysError,
           timestamp: new Date().toISOString(),
         },
+        success: true,
       };
 
-      if (callback) await callback(responseContent);
-      return responseContent;
+      if (callback) await callback({ text: responseResult.text, data: responseResult.data });
+      return responseResult;
     } catch (error) {
       logger.error('[getAccountAccessStatusAction] Error fetching account access status:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred.';
 
-      const errorContent: Content = {
+      const errorResult: ActionResult = {
         text: `❌ **Error**: ${errorMessage}`,
-        actions: ['POLYMARKET_GET_ACCOUNT_ACCESS_STATUS'],
-        data: { error: errorMessage, timestamp: new Date().toISOString() },
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_ACCOUNT_ACCESS_STATUS',
+          error: errorMessage,
+          timestamp: new Date().toISOString(),
+        },
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
       };
 
-      if (callback) await callback(errorContent);
-      throw error;
+      if (callback) await callback({ text: errorResult.text, data: errorResult.data });
+      return errorResult;
     }
   },
 

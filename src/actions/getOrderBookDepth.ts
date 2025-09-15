@@ -1,6 +1,6 @@
 import {
   type Action,
-  type Content,
+  type ActionResult,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
@@ -49,7 +49,7 @@ export const getOrderBookDepthAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<void> => {
+  ): Promise<ActionResult> => {
     logger.info('[getOrderBookDepthAction] Handler called!');
 
     const clobApiUrl = runtime.getSetting('CLOB_API_URL');
@@ -57,16 +57,24 @@ export const getOrderBookDepthAction: Action = {
     if (!clobApiUrl) {
       const errorMessage = 'CLOB_API_URL is required in configuration.';
       logger.error(`[getOrderBookDepthAction] Configuration error: ${errorMessage}`);
-      const errorContent: Content = {
+      const errorResult: ActionResult = {
         text: errorMessage,
-        actions: ['GET_ORDER_BOOK_DEPTH'],
-        data: { error: errorMessage },
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'GET_ORDER_BOOK_DEPTH',
+          error: errorMessage,
+        },
+        success: false,
+        error: new Error(errorMessage),
       };
 
       if (callback) {
-        await callback(errorContent);
+        await callback({ text: errorResult.text, data: errorResult.data });
       }
-      return;
+      return errorResult;
     }
 
     let tokenIds: string[] = [];
@@ -85,21 +93,29 @@ export const getOrderBookDepthAction: Action = {
         const errorMessage =
           'Token identifiers not found. Please specify one or more token IDs for order book depth.';
         logger.error(`[getOrderBookDepthAction] Parameter extraction error: ${errorMessage}`);
-        const errorContent: Content = {
+        const errorResult: ActionResult = {
           text: `❌ **Error**: ${errorMessage}
 
 Please provide one or more token IDs in your request. Examples:
 • "Show order book depth for token 123456"
 • "Get depth for tokens 123456, 789012"
 • "ORDER_BOOK_DEPTH 345678 999999"`,
-          actions: ['GET_ORDER_BOOK_DEPTH'],
-          data: { error: errorMessage },
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'GET_ORDER_BOOK_DEPTH',
+            error: errorMessage,
+          },
+          success: false,
+          error: new Error(errorMessage),
         };
 
         if (callback) {
-          await callback(errorContent);
+          await callback({ text: errorResult.text, data: errorResult.data });
         }
-        return;
+        return errorResult;
       }
 
       tokenIds = llmResult?.tokenIds || [];
@@ -122,9 +138,23 @@ Please provide one or more token IDs in your request. Examples:
       }
       tokenIds = validTokenIds;
     } catch (error) {
-      // Check if this is our specific error message and re-throw it
+      // This error was already handled above
+      // Return the error if it's our specific error message
       if (error instanceof Error && error.message.includes('Token identifiers not found')) {
-        return;
+        const errorResult: ActionResult = {
+          text: error.message,
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'GET_ORDER_BOOK_DEPTH',
+            error: error.message,
+          },
+          success: false,
+          error: error,
+        };
+        return errorResult;
       }
 
       logger.warn('[getOrderBookDepthAction] LLM extraction failed, trying regex fallback');
@@ -158,21 +188,29 @@ Please provide one or more token IDs in your request. Examples:
           'Unable to extract token IDs from your message. Please provide valid token IDs.';
         logger.error('[getOrderBookDepthAction] Token extraction failed:', error);
 
-        const errorContent: Content = {
+        const errorResult: ActionResult = {
           text: `❌ **Error**: ${errorMessage}
 
 Please provide one or more token IDs in your request. Examples:
 • "Show order book depth for token 123456"
 • "Get depth for tokens 123456, 789012"
 • "ORDER_BOOK_DEPTH 345678 999999"`,
-          actions: ['GET_ORDER_BOOK_DEPTH'],
-          data: { error: errorMessage },
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'GET_ORDER_BOOK_DEPTH',
+            error: errorMessage,
+          },
+          success: false,
+          error: new Error(errorMessage),
         };
 
         if (callback) {
-          await callback(errorContent);
+          await callback({ text: errorResult.text, data: errorResult.data });
         }
-        return;
+        return errorResult;
       }
     }
 
@@ -234,10 +272,22 @@ Please provide one or more token IDs in your request. Examples:
       responseText += `• Total Bid Levels: ${totalBids}\n`;
       responseText += `• Total Ask Levels: ${totalAsks}\n`;
 
-      const responseContent: Content = {
+      const responseResult: ActionResult = {
         text: responseText,
-        actions: ['POLYMARKET_GET_ORDER_BOOK_DEPTH'],
+        values: {
+          success: true,
+          orderBooks,
+          tokenIds,
+          summary: {
+            tokensRequested: tokenIds.length,
+            orderBooksFound: orderBooks.length,
+            activeBooks,
+            totalBids,
+            totalAsks,
+          },
+        },
         data: {
+          actionName: 'POLYMARKET_GET_ORDER_BOOK_DEPTH',
           orderBooks,
           tokenIds,
           summary: {
@@ -249,13 +299,14 @@ Please provide one or more token IDs in your request. Examples:
           },
           timestamp: new Date().toISOString(),
         },
+        success: true,
       };
 
       if (callback) {
-        await callback(responseContent);
+        await callback({ text: responseResult.text, data: responseResult.data });
       }
 
-      return;
+      return responseResult;
     } catch (error) {
       logger.error('[getOrderBookDepthAction] Error fetching order books:', error);
 
@@ -263,7 +314,7 @@ Please provide one or more token IDs in your request. Examples:
         error instanceof Error
           ? error.message
           : 'Unknown error occurred while fetching order books';
-      const errorContent: Content = {
+      const errorResult: ActionResult = {
         text: `❌ **Error retrieving order book depth**: ${errorMessage}
 
 Please check:
@@ -273,18 +324,24 @@ Please check:
 • Polymarket CLOB service is operational
 
 **Token IDs provided**: \`${tokenIds.join(', ')}\``,
-        actions: ['POLYMARKET_GET_ORDER_BOOK_DEPTH'],
+        values: {
+          success: false,
+          error: true,
+        },
         data: {
+          actionName: 'POLYMARKET_GET_ORDER_BOOK_DEPTH',
           error: errorMessage,
           tokenIds,
           timestamp: new Date().toISOString(),
         },
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
       };
 
       if (callback) {
-        await callback(errorContent);
+        await callback({ text: errorResult.text, data: errorResult.data });
       }
-      return;
+      return errorResult;
     }
   },
 

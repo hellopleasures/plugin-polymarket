@@ -1,11 +1,11 @@
 import {
   type Action,
+  type ActionResult,
   type IAgentRuntime,
   type Memory,
   type State,
   type HandlerCallback,
   logger,
-  ModelType,
   ActionExample,
 } from '@elizaos/core';
 
@@ -58,7 +58,7 @@ export const getClobMarkets: Action = {
     state: State | undefined,
     _options: any,
     callback?: HandlerCallback
-  ): Promise<boolean> => {
+  ): Promise<ActionResult> => {
     try {
       logger.info('[getClobMarkets] Starting CLOB markets retrieval');
 
@@ -86,7 +86,10 @@ export const getClobMarkets: Action = {
 
       // Call CLOB API to get markets
       logger.info('[getClobMarkets] Fetching CLOB markets from API');
-      const marketsResponse = await clobClient.getMarkets('', {
+      // NOTE: The TypeScript types for getMarkets only show next_cursor parameter,
+      // but the actual API accepts additional filter parameters like category, active, limit.
+      // We cast to any to bypass the incomplete type definition.
+      const marketsResponse = await (clobClient as any).getMarkets('', {
         category: params.category,
         active: params.active,
         limit: params.limit,
@@ -101,21 +104,35 @@ export const getClobMarkets: Action = {
       // Format response message
       const responseMessage = formatClobMarketsResponse(markets, totalCount, nextCursor, params);
 
+      const successResult: ActionResult = {
+        text: responseMessage,
+        values: {
+          success: true,
+          markets: markets,
+          count: totalCount,
+          nextCursor: nextCursor,
+          filters: params,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_CLOB_MARKETS',
+          action: 'clob_markets_retrieved',
+          markets: markets,
+          count: totalCount,
+          next_cursor: nextCursor,
+          filters: params,
+          timestamp: new Date().toISOString(),
+        },
+        success: true,
+      };
+
       if (callback) {
         await callback({
           text: responseMessage,
-          content: {
-            action: 'clob_markets_retrieved',
-            markets: markets,
-            count: totalCount,
-            next_cursor: nextCursor,
-            filters: params,
-            timestamp: new Date().toISOString(),
-          },
+          data: successResult.data,
         });
       }
 
-      return true;
+      return successResult;
     } catch (error) {
       logger.error('[getClobMarkets] Error retrieving CLOB markets:', error);
 
@@ -126,18 +143,30 @@ Please check:
 • Network connectivity is available
 • API service is operational`;
 
+      const errorResult: ActionResult = {
+        text: errorMessage,
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_CLOB_MARKETS',
+          action: 'clob_markets_error',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      };
+
       if (callback) {
         await callback({
           text: errorMessage,
-          content: {
-            action: 'clob_markets_error',
-            error: error instanceof Error ? error.message : 'Unknown error',
-            timestamp: new Date().toISOString(),
-          },
+          data: errorResult.data,
         });
       }
 
-      return false;
+      return errorResult;
     }
   },
 

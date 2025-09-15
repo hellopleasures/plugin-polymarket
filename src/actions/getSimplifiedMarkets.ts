@@ -1,5 +1,6 @@
 import {
   type Action,
+  type ActionResult,
   type Content,
   type HandlerCallback,
   type IAgentRuntime,
@@ -51,7 +52,7 @@ export const getSimplifiedMarketsAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<void> => {
+  ): Promise<ActionResult> => {
     logger.info('[getSimplifiedMarketsAction] Handler called!');
 
     const clobApiUrl = runtime.getSetting('CLOB_API_URL');
@@ -68,7 +69,19 @@ export const getSimplifiedMarketsAction: Action = {
       if (callback) {
         await callback(errorContent);
       }
-      return;
+      return {
+        text: errorMessage,
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_SIMPLIFIED_MARKETS',
+          error: errorMessage,
+        },
+        success: false,
+        error: new Error(errorMessage),
+      };
     }
 
     let nextCursor = '';
@@ -181,7 +194,26 @@ export const getSimplifiedMarketsAction: Action = {
         await callback(responseContent);
       }
 
-      return;
+      return {
+        text: responseText,
+        values: {
+          success: true,
+          marketCount: validMarkets.length,
+          totalCount: response.count || marketCount,
+          filteredCount: marketCount - validMarkets.length,
+          hasMoreResults: !!response.next_cursor && response.next_cursor !== 'LTE=',
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_SIMPLIFIED_MARKETS',
+          markets: validMarkets,
+          count: validMarkets.length,
+          total: response.count || marketCount,
+          filtered: marketCount - validMarkets.length,
+          next_cursor: response.next_cursor,
+          limit: response.limit,
+        },
+        success: true,
+      };
     } catch (error) {
       logger.error('[getSimplifiedMarketsAction] Error fetching simplified markets:', error);
 
@@ -206,7 +238,20 @@ Please check:
       if (callback) {
         await callback(errorContent);
       }
-      return;
+      return {
+        text: errorContent.text,
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_SIMPLIFIED_MARKETS',
+          error: errorMessage,
+          timestamp: new Date().toISOString(),
+        },
+        success: false,
+        error: error instanceof Error ? error : new Error(errorMessage),
+      };
     }
   },
 

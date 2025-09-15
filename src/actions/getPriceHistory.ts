@@ -1,5 +1,6 @@
 import {
   type Action,
+  type ActionResult,
   type IAgentRuntime,
   type Memory,
   type State,
@@ -92,7 +93,7 @@ export const getPriceHistory: Action = {
     state: State | undefined,
     _options: any,
     callback?: HandlerCallback
-  ): Promise<void> => {
+  ): Promise<ActionResult> => {
     try {
       logger.info('[getPriceHistory] Starting price history retrieval');
 
@@ -117,12 +118,56 @@ export const getPriceHistory: Action = {
         }
       } catch (error) {
         logger.error('[getPriceHistory] LLM extraction failed:', error);
-        throw new Error('Failed to extract token ID from message. Please specify a token ID.');
+        const errorMessage = 'Failed to extract token ID from message. Please specify a token ID.';
+        if (callback) {
+          await callback({
+            text: `❌ **Error**: ${errorMessage}`,
+            content: {
+              action: 'POLYMARKET_PRICE_HISTORY_ERROR',
+              error: errorMessage,
+            },
+          });
+        }
+        return {
+          text: errorMessage,
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_GET_PRICE_HISTORY',
+            error: errorMessage,
+          },
+          success: false,
+          error: new Error(errorMessage),
+        };
       }
 
       // Validate required parameters
       if (!params.tokenId) {
-        throw new Error('Token ID is required for price history retrieval');
+        const errorMessage = 'Token ID is required for price history retrieval';
+        if (callback) {
+          await callback({
+            text: `❌ **Error**: ${errorMessage}`,
+            content: {
+              action: 'POLYMARKET_PRICE_HISTORY_ERROR',
+              error: errorMessage,
+            },
+          });
+        }
+        return {
+          text: errorMessage,
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_GET_PRICE_HISTORY',
+            error: errorMessage,
+          },
+          success: false,
+          error: new Error(errorMessage),
+        };
       }
 
       // Set default interval if not provided
@@ -160,7 +205,33 @@ export const getPriceHistory: Action = {
         });
       }
 
-      return;
+      // Calculate some stats for values
+      const prices = priceHistory?.map((p: PricePoint) => p.p) || [];
+      const latestPrice = priceHistory?.length > 0 ? priceHistory[0].p : undefined;
+      const highestPrice = prices.length > 0 ? Math.max(...prices) : undefined;
+      const lowestPrice = prices.length > 0 ? Math.min(...prices) : undefined;
+
+      return {
+        text: responseMessage,
+        values: {
+          success: true,
+          tokenId: params.tokenId,
+          interval: interval,
+          pointsCount: priceHistory?.length || 0,
+          latestPrice,
+          highestPrice,
+          lowestPrice,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_PRICE_HISTORY',
+          tokenId: params.tokenId,
+          interval: interval,
+          priceHistory: priceHistory,
+          pointsCount: priceHistory?.length || 0,
+          timestamp: new Date().toISOString(),
+        },
+        success: true,
+      };
     } catch (error) {
       logger.error('[getPriceHistory] Error retrieving price history:', error);
 
@@ -183,7 +254,20 @@ Please check:
         });
       }
 
-      return;
+      return {
+        text: errorMessage,
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_PRICE_HISTORY',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+        success: false,
+        error: error instanceof Error ? error : new Error('Unknown error'),
+      };
     }
   },
 

@@ -1,4 +1,12 @@
-import { IAgentRuntime, Memory, State, HandlerCallback, logger, Action } from '@elizaos/core';
+import {
+  IAgentRuntime,
+  Memory,
+  State,
+  HandlerCallback,
+  logger,
+  Action,
+  ActionResult,
+} from '@elizaos/core';
 import { initializeClobClient } from '../utils/clobClient';
 import { ethers } from 'ethers';
 
@@ -83,7 +91,7 @@ export const createApiKeyAction: Action = {
     state: State,
     options: any,
     callback: HandlerCallback
-  ): Promise<void> => {
+  ): Promise<ActionResult> => {
     logger.info('[createApiKeyAction] Handler called!');
 
     try {
@@ -204,7 +212,7 @@ export const createApiKeyAction: Action = {
 
       // Check all possible field names in the response
       const allFields = Object.keys(apiCredentials || {});
-      logger.info('[createApiKeyAction] Available fields in response:', allFields);
+      logger.info('[createApiKeyAction] Available fields in response:', JSON.stringify(allFields));
 
       // Format the response with proper type handling - Polymarket uses api_key, api_secret, api_passphrase
       const responseData: ApiKeyResponse = {
@@ -228,11 +236,14 @@ export const createApiKeyAction: Action = {
       };
 
       // Debug logging to see what we extracted
-      logger.info('[createApiKeyAction] Extracted fields:', {
-        id: responseData.id,
-        secretLength: responseData.secret?.length,
-        passphraseLength: responseData.passphrase?.length,
-      });
+      logger.info(
+        '[createApiKeyAction] Extracted fields:',
+        JSON.stringify({
+          id: responseData.id,
+          secretLength: responseData.secret?.length,
+          passphraseLength: responseData.passphrase?.length,
+        })
+      );
 
       // Store the credentials in runtime settings for other actions to use
       // This allows get/delete API key actions to work without requiring env vars
@@ -251,23 +262,29 @@ export const createApiKeyAction: Action = {
         const storedApiSecret = runtime.getSetting('CLOB_API_SECRET');
         const storedApiPassphrase = runtime.getSetting('CLOB_API_PASSPHRASE');
 
-        logger.info('[createApiKeyAction] Verification of stored credentials:', {
-          storedApiKeyLength: storedApiKey?.length,
-          storedSecretLength: storedApiSecret?.length,
-          storedPassphraseLength: storedApiPassphrase?.length,
-          keysMatch: storedApiKey === responseData.id,
-          secretsMatch: storedApiSecret === responseData.secret,
-          passphrasesMatch: storedApiPassphrase === responseData.passphrase,
-        });
+        logger.info(
+          '[createApiKeyAction] Verification of stored credentials:',
+          JSON.stringify({
+            storedApiKeyLength: storedApiKey?.length,
+            storedSecretLength: storedApiSecret?.length,
+            storedPassphraseLength: storedApiPassphrase?.length,
+            keysMatch: storedApiKey === responseData.id,
+            secretsMatch: storedApiSecret === responseData.secret,
+            passphrasesMatch: storedApiPassphrase === responseData.passphrase,
+          })
+        );
       } else {
         logger.warn(
           '[createApiKeyAction] Some credentials are missing, could not store in runtime'
         );
-        logger.warn('[createApiKeyAction] Missing fields:', {
-          hasId: !!responseData.id,
-          hasSecret: !!responseData.secret,
-          hasPassphrase: !!responseData.passphrase,
-        });
+        logger.warn(
+          '[createApiKeyAction] Missing fields:',
+          JSON.stringify({
+            hasId: !!responseData.id,
+            hasSecret: !!responseData.secret,
+            hasPassphrase: !!responseData.passphrase,
+          })
+        );
       }
 
       // Create success message
@@ -295,19 +312,33 @@ ${actionDescription}
 **Next Steps:**
 You can now place orders on Polymarket. The system will automatically use these credentials for authenticated operations.`;
 
+      // Create ActionResult
+      const successResult: ActionResult = {
+        text: successMessage,
+        values: {
+          success: true,
+          apiKey: responseData,
+          isNewKey,
+        },
+        data: {
+          actionName: 'CREATE_API_KEY',
+          success: true,
+          apiKey: responseData,
+          isNewKey,
+        },
+        success: true,
+      };
+
       // Call callback with success response
       if (callback) {
         callback({
           text: successMessage,
-          action: 'CREATE_API_KEY',
-          data: {
-            success: true,
-            apiKey: responseData,
-          },
+          data: successResult.data,
         });
       }
 
       logger.info('[createApiKeyAction] API key creation completed successfully');
+      return successResult;
     } catch (error) {
       logger.error('[createApiKeyAction] Error creating API key:', error);
 
@@ -326,16 +357,29 @@ You can now place orders on Polymarket. The system will automatically use these 
 • Network connection is stable
 • Try again in a few moments`;
 
+      const errorResult: ActionResult = {
+        text: errorMessage,
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'CREATE_API_KEY',
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        },
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      };
+
       if (callback) {
         callback({
           text: errorMessage,
-          action: 'CREATE_API_KEY',
-          data: {
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          },
+          data: errorResult.data,
         });
       }
+
+      return errorResult;
     }
   },
 };

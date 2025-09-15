@@ -1,5 +1,6 @@
 import {
   type Action,
+  type ActionResult,
   type IAgentRuntime,
   type Memory,
   type State,
@@ -55,7 +56,7 @@ export const getOpenMarkets: Action = {
     state: State | undefined,
     _options: any,
     callback?: HandlerCallback
-  ): Promise<void> => {
+  ): Promise<ActionResult> => {
     try {
       logger.info('[getOpenMarkets] Starting open markets retrieval');
 
@@ -156,22 +157,37 @@ export const getOpenMarkets: Action = {
         params
       );
 
+      const successResult: ActionResult = {
+        text: responseMessage,
+        values: {
+          success: true,
+          markets: finalMarketsToReturn,
+          count: finalMarketsToReturn.length,
+          totalOpen: openMarkets.length,
+          totalFetched: allMarkets.length,
+          filters: params,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_OPEN_MARKETS',
+          action: 'open_markets_retrieved',
+          markets: finalMarketsToReturn,
+          count: finalMarketsToReturn.length,
+          total_open: openMarkets.length,
+          total_fetched: allMarkets.length,
+          filters: params,
+          timestamp: new Date().toISOString(),
+        },
+        success: true,
+      };
+
       if (callback) {
         await callback({
           text: responseMessage,
-          content: {
-            action: 'open_markets_retrieved',
-            markets: finalMarketsToReturn,
-            count: finalMarketsToReturn.length,
-            total_open: openMarkets.length,
-            total_fetched: allMarkets.length,
-            filters: params,
-            timestamp: new Date().toISOString(),
-          },
+          data: successResult.data,
         });
       }
 
-      return;
+      return successResult;
     } catch (error) {
       logger.error('[getOpenMarkets] Error retrieving open markets:', error);
 
@@ -182,18 +198,30 @@ Please check:
 • Network connectivity is available
 • API service is operational`;
 
+      const errorResult: ActionResult = {
+        text: errorMessage,
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_OPEN_MARKETS',
+          action: 'open_markets_error',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      };
+
       if (callback) {
         await callback({
           text: errorMessage,
-          content: {
-            action: 'open_markets_error',
-            error: error instanceof Error ? error.message : 'Unknown error',
-            timestamp: new Date().toISOString(),
-          },
+          data: errorResult.data,
         });
       }
 
-      return;
+      return errorResult;
     }
   },
 

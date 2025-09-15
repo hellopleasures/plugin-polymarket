@@ -1,13 +1,11 @@
 import {
   type Action,
-  type Content,
+  type ActionResult,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
   type State,
   logger,
-  ModelType,
-  composePromptFromState,
 } from '@elizaos/core';
 import { callLLMWithTimeout } from '../utils/llmHelpers';
 import { initializeClobClient } from '../utils/clobClient';
@@ -66,7 +64,7 @@ export const getBestPriceAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<Content> => {
+  ): Promise<ActionResult> => {
     logger.info('[getBestPriceAction] Handler called!');
 
     const clobApiUrl = runtime.getSetting('CLOB_API_URL');
@@ -74,16 +72,24 @@ export const getBestPriceAction: Action = {
     if (!clobApiUrl) {
       const errorMessage = 'CLOB_API_URL is required in configuration.';
       logger.error(`[getBestPriceAction] Configuration error: ${errorMessage}`);
-      const errorContent: Content = {
+      const errorResult: ActionResult = {
         text: errorMessage,
-        actions: ['GET_BEST_PRICE'],
-        data: { error: errorMessage },
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'GET_BEST_PRICE',
+          error: errorMessage,
+        },
+        success: false,
+        error: new Error(errorMessage),
       };
 
       if (callback) {
-        await callback(errorContent);
+        await callback({ text: errorResult.text, data: errorResult.data });
       }
-      throw new Error(errorMessage);
+      return errorResult;
     }
 
     let tokenId: string;
@@ -133,21 +139,29 @@ export const getBestPriceAction: Action = {
         const errorMessage = 'Please provide a token ID to get the price for.';
         logger.error(`[getBestPriceAction] Token ID extraction failed`);
 
-        const errorContent: Content = {
+        const errorResult: ActionResult = {
           text: `❌ **Error**: ${errorMessage}
 
 Please provide a token ID in your request. Examples:
 • "Get best price for token 123456 on buy side"
 • "What's the sell price for market token 789012?"
 • "Show me the best bid for 456789"`,
-          actions: ['POLYMARKET_GET_BEST_PRICE'],
-          data: { error: errorMessage },
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_GET_BEST_PRICE',
+            error: errorMessage,
+          },
+          success: false,
+          error: new Error(errorMessage),
         };
 
         if (callback) {
-          await callback(errorContent);
+          await callback({ text: errorResult.text, data: errorResult.data });
         }
-        throw new Error(errorMessage);
+        return errorResult;
       }
     }
 
@@ -182,10 +196,18 @@ ${
     : 'This is the best price you would receive when selling this token.'
 }`;
 
-      const responseContent: Content = {
+      const responseResult: ActionResult = {
         text: responseText,
-        actions: ['POLYMARKET_GET_BEST_PRICE'],
+        values: {
+          success: true,
+          tokenId,
+          side,
+          price: priceResponse.price,
+          formattedPrice,
+          percentagePrice,
+        },
         data: {
+          actionName: 'POLYMARKET_GET_BEST_PRICE',
           tokenId,
           side,
           price: priceResponse.price,
@@ -193,18 +215,19 @@ ${
           percentagePrice,
           timestamp: new Date().toISOString(),
         },
+        success: true,
       };
 
       if (callback) {
-        await callback(responseContent);
+        await callback({ text: responseResult.text, data: responseResult.data });
       }
 
-      return responseContent;
+      return responseResult;
     } catch (error) {
       logger.error('[getBestPriceAction] Error fetching price:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
 
-      const errorContent: Content = {
+      const errorResult: ActionResult = {
         text: `❌ **Error getting best price**: ${errorMessage}
 
 Please check:
@@ -214,19 +237,25 @@ Please check:
 
 **Token ID**: \`${tokenId}\`
 **Side**: \`${side}\``,
-        actions: ['POLYMARKET_GET_BEST_PRICE'],
+        values: {
+          success: false,
+          error: true,
+        },
         data: {
+          actionName: 'POLYMARKET_GET_BEST_PRICE',
           error: errorMessage,
           tokenId,
           side,
           timestamp: new Date().toISOString(),
         },
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
       };
 
       if (callback) {
-        await callback(errorContent);
+        await callback({ text: errorResult.text, data: errorResult.data });
       }
-      throw error;
+      return errorResult;
     }
   },
 

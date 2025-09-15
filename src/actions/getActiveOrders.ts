@@ -1,6 +1,6 @@
 import {
   type Action,
-  type Content,
+  type ActionResult,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
@@ -70,7 +70,7 @@ export const getActiveOrdersAction: Action = {
     state?: State,
     options?: { [key: string]: unknown },
     callback?: HandlerCallback
-  ): Promise<Content> => {
+  ): Promise<ActionResult> => {
     logger.info('[getActiveOrdersAction] Handler called!');
 
     let extractedParams: {
@@ -109,13 +109,21 @@ export const getActiveOrdersAction: Action = {
       if (!extractedParams.marketId) {
         const errorMessage = 'Please specify a Market ID to get active orders.';
         logger.error(`[getActiveOrdersAction] Market ID extraction failed. Text: "${text}"`);
-        const errorContent: Content = {
+        const errorResult: ActionResult = {
           text: `❌ **Error**: ${errorMessage}`,
-          actions: ['POLYMARKET_GET_ACTIVE_ORDERS'],
-          data: { error: errorMessage },
+          values: {
+            success: false,
+            error: true,
+          },
+          data: {
+            actionName: 'POLYMARKET_GET_ACTIVE_ORDERS',
+            error: errorMessage,
+          },
+          success: false,
+          error: new Error(errorMessage),
         };
-        if (callback) await callback(errorContent);
-        throw new Error(errorMessage);
+        if (callback) await callback({ text: errorResult.text, data: errorResult.data });
+        return errorResult;
       }
     }
 
@@ -191,29 +199,47 @@ export const getActiveOrdersAction: Action = {
         responseText += `.`;
       }
 
-      const responseContent: Content = {
+      const responseResult: ActionResult = {
         text: responseText,
-        actions: ['POLYMARKET_GET_ACTIVE_ORDERS'],
+        values: {
+          success: true,
+          orders: actualOrders,
+          nextCursor,
+          marketId: apiParams.market,
+          assetId: apiParams.assetId,
+        },
         data: {
+          actionName: 'POLYMARKET_GET_ACTIVE_ORDERS',
           ...apiParams,
           orders: actualOrders,
           nextCursor,
           timestamp: new Date().toISOString(),
         },
+        success: true,
       };
 
-      if (callback) await callback(responseContent);
-      return responseContent;
+      if (callback) await callback({ text: responseResult.text, data: responseResult.data });
+      return responseResult;
     } catch (error) {
       logger.error('[getActiveOrdersAction] Error fetching active orders:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred.';
-      const errorContent: Content = {
+      const errorResult: ActionResult = {
         text: `❌ **Error fetching active orders for market ${apiParams.market}**: ${errorMessage}`,
-        actions: ['POLYMARKET_GET_ACTIVE_ORDERS'],
-        data: { error: errorMessage, ...apiParams, timestamp: new Date().toISOString() },
+        values: {
+          success: false,
+          error: true,
+        },
+        data: {
+          actionName: 'POLYMARKET_GET_ACTIVE_ORDERS',
+          error: errorMessage,
+          ...apiParams,
+          timestamp: new Date().toISOString(),
+        },
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
       };
-      if (callback) await callback(errorContent);
-      throw error;
+      if (callback) await callback({ text: errorResult.text, data: errorResult.data });
+      return errorResult;
     }
   },
 
