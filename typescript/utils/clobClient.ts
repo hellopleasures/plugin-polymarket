@@ -87,8 +87,11 @@ async function getPolymarketService(
     return null;
   }
   try {
-    const loaded = await runtime.getServiceLoadPromise(POLYMARKET_SERVICE_NAME);
-    return loaded as PolymarketServiceLike;
+    // The runtime implementation accepts plugin-defined service name strings,
+    // but the interface only declares ServiceTypeName. Use a type assertion.
+    const loadService = runtime.getServiceLoadPromise as (s: string) => Promise<PolymarketServiceLike>;
+    const loaded = await loadService(POLYMARKET_SERVICE_NAME);
+    return loaded;
   } catch {
     return null;
   }

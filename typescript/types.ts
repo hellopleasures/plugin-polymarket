@@ -19,7 +19,8 @@ export interface Market {
   rewards: Rewards;
   minimum_order_size: string;
   minimum_tick_size: string;
-  category: string;
+  /** Tags/categories for the market (from CLOB API) */
+  tags: string[];
   end_date_iso: string;
   game_start_time: string;
   question: string;
@@ -333,6 +334,8 @@ export interface CachedAccountState {
   activeOrders: OpenOrder[];
   recentTrades: TradeEntry[];
   positions: Position[];
+  /** Scoring status for active orders - true means order is eligible for rewards */
+  orderScoringStatus: Record<string, boolean>;
   apiKeys: ApiKey[];
   certRequired: boolean | null;
   lastUpdatedAt: number;
@@ -476,9 +479,10 @@ export type ActivityType =
  */
 export interface MarketsActivityData {
   type: "markets_list";
-  mode: "standard" | "simplified" | "sampling_random" | "sampling_rewards";
+  mode: "standard" | "simplified" | "sampling_random" | "sampling_rewards" | "search" | "browse";
   count: number;
-  category?: string;
+  /** Category/tag filter that was applied */
+  tags?: string[];
   activeOnly?: boolean;
   /** First few market summaries for context */
   markets: Array<{
@@ -497,7 +501,8 @@ export interface MarketDetailsActivityData {
   type: "market_details";
   conditionId: string;
   question: string;
-  category: string;
+  /** Tags/categories for the market */
+  tags: string[];
   active: boolean;
   closed: boolean;
   tokens?: Array<{

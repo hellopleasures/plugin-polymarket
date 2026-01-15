@@ -3,63 +3,30 @@
  *
  * ## Overview
  *
- * These actions provide real-time order book data from the Polymarket CLOB
- * (Central Limit Order Book). The order book represents all outstanding buy
- * and sell orders for a prediction market outcome token.
+ * This module provides the order book depth action for comparing liquidity
+ * across multiple Polymarket tokens.
  *
- * ## What is an Order Book?
+ * Note: The getOrderBookSummaryAction has been consolidated into getTokenInfoAction
+ * which now provides comprehensive single-token information including pricing.
  *
- * An order book is a list of buy orders (bids) and sell orders (asks) organized
- * by price level. In Polymarket:
- * - **Bids**: Orders from traders willing to BUY shares at a given price
- * - **Asks**: Orders from traders willing to SELL shares at a given price
- * - **Spread**: The difference between the best (lowest) ask and best (highest) bid
- * - **Midpoint**: The average of the best bid and best ask prices
+ * ## When to Use This Action
  *
- * ## Why Use Order Book Data?
- *
- * Order book data helps you:
- * 1. **Understand market liquidity** - How much volume is available at each price
- * 2. **Get fair pricing** - Find the best available prices before trading
- * 3. **Assess market sentiment** - Heavy bid-side suggests bullish sentiment
- * 4. **Plan order placement** - Know where to place limit orders for execution
- * 5. **Compare markets** - Evaluate depth across multiple tokens
- *
- * ## When to Use Each Action
- *
- * ### POLYMARKET_GET_ORDER_BOOK (Consolidated Action)
- * **Use for:** Single-token queries about current market state
- * - Getting a quick snapshot of the order book (summary)
- * - Finding the best available buy or sell price (bestPrice)
- * - Getting the midpoint price for valuation (midpoint)
- * - Checking the bid-ask spread for liquidity assessment (spread)
- *
- * **Example queries:**
- * - "What's the order book for token X?"
- * - "What's the best price to buy token X?"
- * - "What's the spread on token X?"
- *
- * ### POLYMARKET_GET_ORDER_BOOK_DEPTH (Multi-Token Depth)
+ * ### POLYMARKET_GET_ORDER_BOOK_DEPTH
  * **Use for:** Comparing liquidity depth across multiple tokens
  * - Evaluating which markets have the most liquidity
  * - Finding markets with adequate depth for large orders
+ * - Comparing market maturity across related markets
  *
  * **Example queries:**
  * - "Compare depth for tokens A, B, and C"
  * - "Which of these markets has more liquidity?"
  *
- * ## When NOT to Use These Actions
+ * ## When NOT to Use This Action
  *
+ * - **Single token info**: Use `getTokenInfoAction` for comprehensive single-token data
  * - **Historical prices**: Use `getPriceHistoryAction` for past price data
  * - **Market discovery**: Use `getMarketsAction` to find markets by topic
  * - **Placing orders**: Use `placeOrderAction` to execute trades
- * - **Position tracking**: Use `getPositionsAction` to see your holdings
- *
- * ## Technical Notes
- *
- * - Order book data is real-time and changes constantly as orders are placed/filled
- * - Prices are quoted in USDC (stablecoin pegged to $1 USD)
- * - Token IDs are the condition token addresses from Polymarket markets
  */
 
 import {
@@ -72,296 +39,17 @@ import {
   type Memory,
   type State,
 } from "@elizaos/core";
-import { getOrderBookDepthTemplate, getOrderBookTemplate } from "../templates";
+import { getOrderBookDepthTemplate } from "../templates";
 import type { OrderBook } from "../types";
 import {
   initializeClobClient,
   callLLMWithTimeout,
   isLLMError,
   parseOrderBookParameters,
-  inferMetricFromText,
-  inferSideFromText,
-  resolveTokenIdFromLLM,
-  fetchOrderBookSummary,
+  sendAcknowledgement,
+  sendError,
   type LLMTokensResult,
 } from "../utils";
-
-// =============================================================================
-// Get Order Book Summary Action
-// =============================================================================
-
-/**
- * Consolidated order book action for retrieving real-time market data.
- *
- * This is the primary action for single-token order book queries. It supports
- * multiple metrics through the `metric` parameter:
- *
- * - **summary** (default): Full snapshot with top 5 bids/asks, spread, midpoint
- * - **bestPrice**: Top-of-book price for buying or selling
- * - **midpoint**: Average of best bid and best ask
- * - **spread**: Difference between best ask and best bid
- *
- * ## Usage Examples
- *
- * ```
- * // Get full order book summary
- * { tokenId: "123...", metric: "summary" }
- *
- * // Get best price to buy
- * { tokenId: "123...", metric: "bestPrice", side: "buy" }
- *
- * // Get current spread
- * { tokenId: "123...", metric: "spread" }
- * ```
- *
- * ## When to Use
- *
- * Use this action when you need current market state for a single token:
- * - Before placing an order to understand available prices
- * - To check market liquidity via spread
- * - To get a fair value estimate via midpoint
- *
- * ## When NOT to Use
- *
- * - For historical price data → use `getPriceHistoryAction`
- * - For comparing multiple tokens → use `getOrderBookDepthAction`
- * - For discovering markets → use `getMarketsAction`
- */
-export const getOrderBookSummaryAction: Action = {
-  name: "POLYMARKET_GET_ORDER_BOOK",
-  similes: [
-    "ORDER_BOOK",
-    "GET_ORDER_BOOK",
-    "SHOW_ORDER_BOOK",
-    "BOOK",
-    "ORDERS",
-    "BEST_PRICE",
-    "MIDPOINT",
-    "SPREAD",
-  ],
-  description: `Retrieves real-time order book data for a single Polymarket token.
-
-**What it does:**
-Returns the current state of buy orders (bids) and sell orders (asks) for a token, including best prices, spread, and midpoint.
-
-**When to use:**
-- Getting current market prices before trading
-- Checking bid-ask spread to assess liquidity
-- Finding the best available buy or sell price
-- Getting midpoint price for fair value estimation
-
-**When NOT to use:**
-- Historical price data → use getPriceHistoryAction
-- Comparing depth across multiple tokens → use POLYMARKET_GET_ORDER_BOOK_DEPTH
-- Finding markets by topic → use getMarketsAction
-
-**Parameters:**
-- tokenId (required): Polymarket condition token ID
-- metric (optional): summary | bestPrice | midpoint | spread
-- side (optional): buy | sell | bid | ask (only for bestPrice metric)`,
-
-  parameters: [
-    {
-      name: "tokenId",
-      description: "Polymarket condition token ID to fetch order book for",
-      required: false,
-      schema: { type: "string" },
-      examples: ["123456", "0xabc123"],
-    },
-    {
-      name: "metric",
-      description:
-        "Metric to return: summary (full snapshot), bestPrice (top-of-book), midpoint (mid price), spread (bid-ask gap)",
-      required: false,
-      schema: { type: "string", enum: ["summary", "bestPrice", "midpoint", "spread"] },
-      examples: ["summary", "bestPrice"],
-    },
-    {
-      name: "side",
-      description:
-        "Side for bestPrice metric: buy/ask (price to buy at), sell/bid (price to sell at)",
-      required: false,
-      schema: { type: "string", enum: ["buy", "sell", "bid", "ask"] },
-      examples: ["buy", "sell"],
-    },
-  ],
-
-  validate: async (runtime: IAgentRuntime): Promise<boolean> => {
-    return Boolean(runtime.getSetting("CLOB_API_URL"));
-  },
-
-  handler: async (
-    runtime: IAgentRuntime,
-    message: Memory,
-    state?: State,
-    options?: HandlerOptions,
-    callback?: HandlerCallback
-  ): Promise<ActionResult> => {
-    runtime.logger.info("[getOrderBookSummaryAction] Handler called");
-
-    let tokenId = "";
-
-    try {
-      const parsedOptions = parseOrderBookParameters(options?.parameters);
-      if (parsedOptions.tokenId) {
-        tokenId = parsedOptions.tokenId;
-      } else {
-        const llmResult = await resolveTokenIdFromLLM(
-          runtime,
-          state,
-          getOrderBookTemplate,
-          "getOrderBookSummaryAction"
-        );
-
-        if (llmResult.error || !llmResult.tokenId) {
-          throw new Error(llmResult.error || "Token ID not found. Please specify a token ID.");
-        }
-
-        tokenId = llmResult.tokenId;
-      }
-
-      const orderBook = (await fetchOrderBookSummary(runtime, tokenId)) as OrderBook;
-
-      // Calculate summary stats
-      const topBid = orderBook.bids[0];
-      const topAsk = orderBook.asks[0];
-      const spreadValue =
-        topBid && topAsk ? parseFloat(topAsk.price) - parseFloat(topBid.price) : null;
-      const spread = spreadValue !== null ? spreadValue.toFixed(4) : "N/A";
-      const midpointValue =
-        topBid && topAsk ? (parseFloat(topAsk.price) + parseFloat(topBid.price)) / 2 : null;
-      const midpoint = midpointValue !== null ? midpointValue.toFixed(4) : "N/A";
-
-      const metric = parsedOptions.metric ?? inferMetricFromText(message.content?.text);
-      const side = parsedOptions.side ?? inferSideFromText(message.content?.text) ?? "buy";
-
-      let responseText = `📚 **Order Book for Token ${tokenId.slice(0, 16)}...**\n\n`;
-
-      if (metric === "bestPrice") {
-        const normalizedSide = side === "bid" ? "sell" : side === "ask" ? "buy" : side;
-        const bestEntry = normalizedSide === "buy" ? topAsk : topBid;
-        const bestLabel = normalizedSide === "buy" ? "Best Ask" : "Best Bid";
-        responseText += `**${bestLabel}:** ${
-          bestEntry ? `$${bestEntry.price} (${bestEntry.size} shares)` : "None"
-        }\n`;
-      } else if (metric === "midpoint") {
-        responseText += `**Midpoint:** ${midpoint === "N/A" ? "N/A" : `$${midpoint}`}\n`;
-      } else if (metric === "spread") {
-        responseText += `**Spread:** ${spread === "N/A" ? "N/A" : `$${spread}`}\n`;
-      } else {
-        responseText += `**Summary:**\n`;
-        responseText += `• Best Bid: ${topBid ? `$${topBid.price} (${topBid.size} shares)` : "None"}\n`;
-        responseText += `• Best Ask: ${topAsk ? `$${topAsk.price} (${topAsk.size} shares)` : "None"}\n`;
-        responseText += `• Spread: ${spread}\n`;
-        responseText += `• Midpoint: ${midpoint === "N/A" ? "N/A" : `$${midpoint}`}\n\n`;
-
-        responseText += `**Top 5 Bids:**\n`;
-        orderBook.bids.slice(0, 5).forEach((bid, i) => {
-          responseText += `${i + 1}. $${bid.price} - ${bid.size} shares\n`;
-        });
-
-        responseText += `\n**Top 5 Asks:**\n`;
-        orderBook.asks.slice(0, 5).forEach((ask, i) => {
-          responseText += `${i + 1}. $${ask.price} - ${ask.size} shares\n`;
-        });
-      }
-
-      const responseContent: Content = {
-        text: responseText,
-        actions: ["POLYMARKET_GET_ORDER_BOOK"],
-      };
-
-      if (callback) {
-        await callback(responseContent);
-      }
-
-      return {
-        success: true,
-        text: responseText,
-        data: {
-          tokenId,
-          metric,
-          side,
-          bestBid: topBid?.price ?? "N/A",
-          bestAsk: topAsk?.price ?? "N/A",
-          spread,
-          midpoint,
-          timestamp: new Date().toISOString(),
-        },
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      runtime.logger.error("[getOrderBookSummaryAction] Error:", error);
-
-      const errorContent: Content = {
-        text: `❌ **Error**: ${errorMessage}\n\n**Token ID**: \`${tokenId || "not provided"}\``,
-        actions: ["POLYMARKET_GET_ORDER_BOOK"],
-        data: { error: errorMessage, tokenId },
-      };
-
-      if (callback) {
-        await callback(errorContent);
-      }
-      throw error;
-    }
-  },
-
-  examples: [
-    [
-      {
-        name: "{{user1}}",
-        content: { text: "Show me the order book for token 123456" },
-      },
-      {
-        name: "{{user2}}",
-        content: {
-          text: "I'll fetch the order book for that token.",
-          action: "POLYMARKET_GET_ORDER_BOOK",
-        },
-      },
-    ],
-    [
-      {
-        name: "{{user1}}",
-        content: { text: "What's the best bid for token 123456?" },
-      },
-      {
-        name: "{{user2}}",
-        content: {
-          text: "Fetching the top-of-book best bid for token 123456.",
-          action: "POLYMARKET_GET_ORDER_BOOK",
-          parameters: { tokenId: "123456", metric: "bestPrice", side: "sell" },
-        },
-      },
-    ],
-    [
-      {
-        name: "{{user1}}",
-        content: { text: "What's the spread on this market?" },
-      },
-      {
-        name: "{{user2}}",
-        content: {
-          text: "I'll check the bid-ask spread for you.",
-          action: "POLYMARKET_GET_ORDER_BOOK",
-          parameters: { metric: "spread" },
-        },
-      },
-    ],
-    [
-      {
-        name: "{{user1}}",
-        content: { text: "Show me every bid and ask level for token 123456." },
-      },
-      {
-        name: "{{user2}}",
-        content: {
-          text: "The order book summary shows the top 5 levels. For full depth across all levels, I can use the depth action instead.",
-        },
-      },
-    ],
-  ],
-};
 
 // =============================================================================
 // Get Order Book Depth Action
@@ -393,30 +81,14 @@ interface DepthData {
  *
  * ## When NOT to Use
  *
- * - For single-token queries → use `POLYMARKET_GET_ORDER_BOOK`
- * - For actual prices → use `POLYMARKET_GET_ORDER_BOOK` with bestPrice/midpoint
+ * - For single-token queries → use `getTokenInfoAction`
+ * - For actual prices → use `getTokenInfoAction`
  * - For trading → use `placeOrderAction`
  */
 export const getOrderBookDepthAction: Action = {
   name: "POLYMARKET_GET_ORDER_BOOK_DEPTH",
-  similes: ["ORDER_BOOK_DEPTH", "DEPTH", "MARKET_DEPTH", "LIQUIDITY"],
-  description: `Retrieves order book depth (number of bid/ask levels) for multiple tokens.
-
-**What it does:**
-Returns the count of bid and ask price levels for each token, indicating market depth and liquidity.
-
-**When to use:**
-- Comparing liquidity across multiple markets
-- Finding markets with sufficient depth for large trades
-- Evaluating market activity and maturity
-
-**When NOT to use:**
-- Single-token price queries → use POLYMARKET_GET_ORDER_BOOK
-- Getting actual prices → use POLYMARKET_GET_ORDER_BOOK with bestPrice metric
-- Historical data → use getPriceHistoryAction
-
-**Parameters:**
-- tokenIds (required): Array of Polymarket condition token IDs to compare`,
+  similes: ["ORDER_BOOK_DEPTH", "DEPTH", "MARKET_DEPTH", "LIQUIDITY", "COMPARE_DEPTH"],
+  description: "Retrieves order book depth (number of bid/ask levels) for multiple tokens to compare liquidity across markets. Use when comparing depth across multiple markets or finding markets with sufficient liquidity for large trades. Parameters: tokenIds (array of condition token IDs, required).",
 
   parameters: [
     {
@@ -431,8 +103,9 @@ Returns the count of bid and ask price levels for each token, indicating market 
     },
   ],
 
-  validate: async (runtime: IAgentRuntime): Promise<boolean> => {
-    return Boolean(runtime.getSetting("CLOB_API_URL"));
+  validate: async (_runtime: IAgentRuntime): Promise<boolean> => {
+    // Always validate - CLOB API URL has a default fallback in initializeClobClient
+    return true;
   },
 
   handler: async (
@@ -459,11 +132,18 @@ Returns the count of bid and ask price levels for each token, indicating market 
         );
 
         if (isLLMError(llmResult) || !llmResult?.tokenIds?.length) {
-          throw new Error("Token IDs not found. Please specify token IDs.");
+          await sendError(callback, "Token IDs not found. Please specify token IDs to compare.");
+          return { success: false, text: "Token IDs required", error: "missing_tokens" };
         }
 
         tokenIds = llmResult.tokenIds;
       }
+
+      // Send acknowledgement before API calls
+      await sendAcknowledgement(callback, `Comparing order book depth for ${tokenIds.length} token(s)...`, {
+        tokenCount: tokenIds.length,
+        tokens: tokenIds.map((t) => t.slice(0, 12) + "...").join(", "),
+      });
 
       const clobClient = await initializeClobClient(runtime);
       // Use getOrderBooks and calculate depth from the result
@@ -486,7 +166,7 @@ Returns the count of bid and ask price levels for each token, indicating market 
         };
       });
 
-      let responseText = `📊 **Order Book Depth**\n\n`;
+      let responseText = `📊 **Order Book Depth Comparison**\n\n`;
 
       Object.entries(depths).forEach(([tid, depth]) => {
         responseText += `**Token ${tid.slice(0, 12)}...**\n`;
@@ -515,17 +195,8 @@ Returns the count of bid and ask price levels for each token, indicating market 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       runtime.logger.error("[getOrderBookDepthAction] Error:", error);
-
-      const errorContent: Content = {
-        text: `❌ **Error**: ${errorMessage}`,
-        actions: ["POLYMARKET_GET_ORDER_BOOK_DEPTH"],
-        data: { error: errorMessage, tokenIds },
-      };
-
-      if (callback) {
-        await callback(errorContent);
-      }
-      throw error;
+      await sendError(callback, `Failed to fetch order book depth: ${errorMessage}`, `${tokenIds.length} token(s)`);
+      return { success: false, text: `Order book error: ${errorMessage}`, error: errorMessage };
     }
   },
 
@@ -559,12 +230,12 @@ Returns the count of bid and ask price levels for each token, indicating market 
     [
       {
         name: "{{user1}}",
-        content: { text: "What's the midpoint price for token 123?" },
+        content: { text: "What's the current price for token 123?" },
       },
       {
         name: "{{user2}}",
         content: {
-          text: "That's a single-token price question. I'll use the order book summary action with the midpoint metric instead.",
+          text: "That's a single-token question. I'll use the token info action to get comprehensive details including pricing.",
         },
       },
     ],

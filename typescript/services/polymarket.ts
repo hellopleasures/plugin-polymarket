@@ -28,6 +28,7 @@ import {
   type ActivityType,
   type ApiKey,
   type ApiKeyCreds,
+  type AreOrdersScoringResponse,
   type AuthenticationStatus,
   type BalanceAllowance,
   type CachedAccountState,
@@ -91,6 +92,102 @@ function parseBooleanSetting(value: string | boolean | null | undefined): boolea
   if (!value) return false;
   const normalized = value.trim().toLowerCase();
   return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+// =============================================================================
+// Proxy Wallet Detection Helpers
+// =============================================================================
+
+/**
+ * Tries to detect the user's Polymarket proxy wallet address by checking
+ * multiple API endpoints that may return proxy wallet info.
+ * 
+ * @param eoaAddress - The user's EOA address
+ * @param logger - Optional logger for debugging
+ * @returns The proxy wallet address if found, or empty string
+ */
+async function tryDetectProxyWallet(
+  eoaAddress: string,
+  fetchFn?: typeof fetch,
+  logger?: { info: (msg: string) => void; warn: (msg: string) => void }
+): Promise<string> {
+  const doFetch = fetchFn ?? fetch;
+  const loweredEoa = eoaAddress.toLowerCase();
+  
+  // Helper to extract proxy address from response data
+  const extractProxy = (data: Record<string, unknown>): string | null => {
+    // Check various field names that might contain proxy wallet
+    const candidates = [
+      data.proxyWallet,
+      data.proxy_wallet,
+      data.proxy,
+      data.funder,
+      data.funder_address,
+      data.funderAddress,
+    ];
+    
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" && candidate.startsWith("0x") && candidate.length === 42) {
+        // Make sure it's different from the EOA
+        if (candidate.toLowerCase() !== loweredEoa) {
+          return candidate;
+        }
+      }
+    }
+    return null;
+  };
+
+  // 1. Try Gamma API public-profile endpoint (documented endpoint)
+  try {
+    const gammaProfileUrl = `https://gamma-api.polymarket.com/public-profile?address=${eoaAddress}`;
+    logger?.info(`[ProxyDetect] Trying gamma public-profile: ${gammaProfileUrl}`);
+    const response = await doFetch(gammaProfileUrl);
+    
+    if (response.ok) {
+      const data = await response.json() as Record<string, unknown>;
+      logger?.info(`[ProxyDetect] Gamma profile response: ${JSON.stringify(data).slice(0, 300)}`);
+      
+      const proxy = extractProxy(data);
+      if (proxy) {
+        logger?.info(`[ProxyDetect] Found proxy wallet from gamma profile: ${proxy}`);
+        return proxy;
+      }
+    } else {
+      logger?.info(`[ProxyDetect] Gamma profile returned ${response.status}`);
+    }
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    logger?.info(`[ProxyDetect] Gamma profile failed: ${errMsg}`);
+  }
+  
+  // 2. Try Data API positions endpoint - returns proxyWallet in position data
+  try {
+    const dataApiUrl = `https://data-api.polymarket.com/positions?user=${eoaAddress}&limit=1`;
+    logger?.info(`[ProxyDetect] Trying data-api positions: ${dataApiUrl}`);
+    const response = await doFetch(dataApiUrl);
+    
+    if (response.ok) {
+      const data = await response.json() as Record<string, unknown>[];
+      logger?.info(`[ProxyDetect] Data API response: ${JSON.stringify(data).slice(0, 300)}`);
+      
+      // Positions array - each position has proxyWallet field
+      if (Array.isArray(data) && data.length > 0) {
+        const firstPosition = data[0];
+        const proxy = extractProxy(firstPosition);
+        if (proxy) {
+          logger?.info(`[ProxyDetect] Found proxy wallet from data-api positions: ${proxy}`);
+          return proxy;
+        }
+      }
+    } else {
+      logger?.info(`[ProxyDetect] Data API returned ${response.status}`);
+    }
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    logger?.info(`[ProxyDetect] Data API failed: ${errMsg}`);
+  }
+  
+  return "";
 }
 
 // =============================================================================
@@ -354,6 +451,9 @@ export class PolymarketService extends Service {
 
     // Initialize account state on startup
     await service.refreshAccountState();
+    
+    // If balance is 0 but we have trades, try to detect proxy from trade history
+    await service.tryDetectProxyFromTrades();
 
     // Set up periodic refresh for account state (every 5 minutes to check TTL)
     if (service.accountStateRefreshInterval) {
@@ -447,14 +547,73 @@ export class PolymarketService extends Service {
     const signatureTypeSetting =
       this.polymarketRuntime.getSetting("POLYMARKET_SIGNATURE_TYPE") ||
       this.polymarketRuntime.getSetting("CLOB_SIGNATURE_TYPE");
+    
     const funderSetting =
       this.polymarketRuntime.getSetting("POLYMARKET_FUNDER_ADDRESS") ||
       this.polymarketRuntime.getSetting("POLYMARKET_FUNDER") ||
       this.polymarketRuntime.getSetting("CLOB_FUNDER_ADDRESS");
     const signatureType = parseSignatureType(signatureTypeSetting);
-    const funderAddress = normalizeSetting(funderSetting);
+    let funderAddress = normalizeSetting(funderSetting);
+
+    // Log wallet address for debugging
+    this.polymarketRuntime.logger.info(
+      `[PolymarketService] EOA Wallet address: ${this.walletAddress}`
+    );
+    
+    // Store the original signature type for later logic
+    let effectiveSignatureType = signatureType;
+    
+    // Try to detect proxy wallet if funder not set
+    if (!funderAddress && this.walletAddress) {
+      this.polymarketRuntime.logger.info(
+        `[PolymarketService] Attempting to detect proxy wallet...`
+      );
+      
+      const detectedProxy = await tryDetectProxyWallet(
+        this.walletAddress,
+        this.polymarketRuntime.fetch?.bind(this.polymarketRuntime),
+        {
+          info: (msg: string) => this.polymarketRuntime.logger.info(msg),
+          warn: (msg: string) => this.polymarketRuntime.logger.warn(msg),
+        }
+      );
+      
+      if (detectedProxy) {
+        this.polymarketRuntime.logger.info(
+          `[PolymarketService] Detected proxy wallet: ${detectedProxy}`
+        );
+        
+        // Auto-use the detected proxy wallet
+        // Set signature type to 2 (POLY_GNOSIS_SAFE) if not already set
+        if (effectiveSignatureType === undefined || effectiveSignatureType === 0) {
+          this.polymarketRuntime.logger.info(
+            `[PolymarketService] Auto-setting signatureType=2 for proxy wallet`
+          );
+          effectiveSignatureType = 2;
+        }
+        
+        this.polymarketRuntime.logger.info(
+          `[PolymarketService] Auto-using detected proxy wallet as funder`
+        );
+        funderAddress = detectedProxy;
+      } else {
+        this.polymarketRuntime.logger.info(
+          `[PolymarketService] No proxy wallet detected via API. If your balance shows 0 but you have funds on Polymarket:\n` +
+          `  1. Find your proxy wallet address on Polymarket.com or Polygonscan\n` +
+          `  2. Add to .env: POLYMARKET_SIGNATURE_TYPE=2\n` +
+          `  3. Add to .env: POLYMARKET_FUNDER_ADDRESS=<your-proxy-wallet>`
+        );
+      }
+    }
 
     const allowCreate = this.getAllowCreateApiKey();
+    
+    // Log final configuration
+    this.polymarketRuntime.logger.info(
+      `[PolymarketService] Auth config: signatureType=${effectiveSignatureType ?? "default(0)"}, ` +
+      `funderAddress=${funderAddress ?? "none (using EOA)"}`
+    );
+    
     this.polymarketRuntime.logger.info(
       `[PolymarketService] Initializing authenticated client (allowCreate: ${allowCreate})`
     );
@@ -477,7 +636,7 @@ export class PolymarketService extends Service {
       POLYGON_CHAIN_ID,
       signer,
       creds,
-      signatureType,
+      effectiveSignatureType,
       funderAddress
     );
     this.polymarketRuntime.logger.info(
@@ -813,6 +972,16 @@ export class PolymarketService extends Service {
         balancesResult.status === "fulfilled"
           ? balancesResult.value
           : { collateral: null, conditionalTokens: {} };
+      
+      if (balancesResult.status === "rejected") {
+        this.polymarketRuntime.logger.warn(
+          `[PolymarketService] Balance fetch failed: ${balancesResult.reason}`
+        );
+      } else {
+        this.polymarketRuntime.logger.info(
+          `[PolymarketService] Balance fetch result: collateral=${balances.collateral?.balance ?? "null"}`
+        );
+      }
 
       const activeOrders: OpenOrder[] =
         ordersResult.status === "fulfilled" ? ordersResult.value : [];
@@ -828,12 +997,21 @@ export class PolymarketService extends Service {
       // Calculate positions from trade history
       const positions = calculatePositionsFromTrades(recentTrades);
 
+      // Fetch order scoring status for active orders
+      let orderScoringStatus: Record<string, boolean> = {};
+      if (activeOrders.length > 0) {
+        orderScoringStatus = await this.fetchOrderScoringStatus(
+          activeOrders.map((o) => o.id)
+        );
+      }
+
       const accountState: CachedAccountState = {
         walletAddress: this.walletAddress,
         balances,
         activeOrders,
         recentTrades,
         positions,
+        orderScoringStatus,
         apiKeys: apiKeysData.apiKeys,
         certRequired: apiKeysData.certRequired,
         lastUpdatedAt: now,
@@ -843,8 +1021,9 @@ export class PolymarketService extends Service {
       this.cachedAccountState = accountState;
       await this.polymarketRuntime.setCache(POLYMARKET_ACCOUNT_STATE_CACHE_KEY, accountState);
 
+      const scoringCount = Object.values(orderScoringStatus).filter((v) => v).length;
       this.polymarketRuntime.logger.info(
-        `[PolymarketService] Account state refreshed: ${activeOrders.length} orders, ${recentTrades.length} trades, ${positions.length} positions`
+        `[PolymarketService] Account state refreshed: ${activeOrders.length} orders (${scoringCount} scoring), ${recentTrades.length} trades, ${positions.length} positions`
       );
 
       return accountState;
@@ -859,7 +1038,25 @@ export class PolymarketService extends Service {
 
   private async fetchAccountBalances(): Promise<AccountBalances> {
     if (!this.authenticatedClient) {
+      this.polymarketRuntime.logger.warn(
+        "[PolymarketService] Cannot fetch balances: authenticated client not initialized"
+      );
       return { collateral: null, conditionalTokens: {} };
+    }
+
+    // Update balance allowance first to ensure fresh data
+    // This is required per Polymarket API documentation
+    try {
+      await this.authenticatedClient.updateBalanceAllowance({
+        asset_type: AssetType.COLLATERAL,
+      });
+    } catch (updateError) {
+      this.polymarketRuntime.logger.warn(
+        `[PolymarketService] Failed to update balance allowance: ${
+          updateError instanceof Error ? updateError.message : String(updateError)
+        }`
+      );
+      // Continue anyway - getBalanceAllowance might still work
     }
 
     // Fetch collateral (USDC) balance
@@ -867,12 +1064,39 @@ export class PolymarketService extends Service {
       asset_type: AssetType.COLLATERAL,
     });
 
+    this.polymarketRuntime.logger.info(
+      `[PolymarketService] Raw balance response: ${JSON.stringify(collateralResponse)}`
+    );
+
+    // The CLOB API returns balance in atomic units (USDC has 6 decimals)
+    // However, some versions may return it already formatted - check if value is small
+    const USDC_DECIMALS = 6;
+    const formatBalance = (rawBalance: string | number | null | undefined): string => {
+      if (rawBalance === null || rawBalance === undefined) return "0";
+      const numValue = typeof rawBalance === "string" ? parseFloat(rawBalance) : rawBalance;
+      if (!Number.isFinite(numValue)) return "0";
+      
+      // If the value looks like it's already in decimal form (e.g., 9.5 not 9500000)
+      // then don't divide by 10^6
+      if (numValue > 0 && numValue < 1000) {
+        // Likely already formatted, return as-is with proper decimal places
+        return numValue.toFixed(6);
+      }
+      
+      // Otherwise assume atomic units and convert
+      return (numValue / Math.pow(10, USDC_DECIMALS)).toFixed(6);
+    };
+
     const collateral: BalanceAllowance | null = collateralResponse
       ? {
-          balance: String(collateralResponse.balance ?? "0"),
-          allowance: String(collateralResponse.allowance ?? "0"),
+          balance: formatBalance(collateralResponse.balance),
+          allowance: formatBalance(collateralResponse.allowance),
         }
       : null;
+    
+    this.polymarketRuntime.logger.info(
+      `[PolymarketService] Formatted collateral balance: ${collateral?.balance ?? "null"}`
+    );
 
     // Get unique asset IDs from active orders and recent trades to fetch conditional balances
     const assetIds = new Set<string>();
@@ -956,6 +1180,25 @@ export class PolymarketService extends Service {
     }
   }
 
+  private async fetchOrderScoringStatus(orderIds: string[]): Promise<Record<string, boolean>> {
+    if (!this.authenticatedClient || orderIds.length === 0) {
+      return {};
+    }
+
+    try {
+      const scoringResponse = (await this.authenticatedClient.areOrdersScoring({
+        orderIds,
+      })) as AreOrdersScoringResponse;
+      return scoringResponse ?? {};
+    } catch (error) {
+      this.polymarketRuntime.logger.warn(
+        "[PolymarketService] Failed to fetch order scoring status:",
+        error instanceof Error ? error.message : String(error)
+      );
+      return {};
+    }
+  }
+
   /**
    * Update conditional token balances based on known asset IDs from orders/trades.
    * Call this after fetching orders and trades to get relevant token balances.
@@ -1011,6 +1254,110 @@ export class PolymarketService extends Service {
     this.cachedAccountState = null;
   }
 
+  /**
+   * Attempt to detect proxy wallet from trade history if balance shows 0 but
+   * we have trades. This is a fallback when API-based detection fails.
+   */
+  private async tryDetectProxyFromTrades(): Promise<void> {
+    const state = this.cachedAccountState;
+    if (!state) return;
+    
+    // Check if balance is 0 but we have trades
+    const balance = parseFloat(state.balances?.collateral?.balance ?? "0");
+    const hasZeroBalance = balance === 0 || !Number.isFinite(balance);
+    const hasTrades = state.recentTrades.length > 0;
+    
+    if (!hasZeroBalance || !hasTrades) {
+      return;
+    }
+    
+    this.polymarketRuntime.logger.info(
+      `[PolymarketService] Balance is 0 but have ${state.recentTrades.length} trades - checking for proxy wallet`
+    );
+    
+    // Get unique owner addresses from trades
+    const ownerAddresses = new Set<string>();
+    for (const trade of state.recentTrades) {
+      if (trade.owner && trade.owner.startsWith("0x")) {
+        ownerAddresses.add(trade.owner.toLowerCase());
+      }
+    }
+    
+    // Find owner that's different from our EOA
+    const eoaLower = this.walletAddress?.toLowerCase();
+    let proxyAddress: string | null = null;
+    
+    for (const owner of ownerAddresses) {
+      if (owner !== eoaLower) {
+        proxyAddress = owner;
+        break;
+      }
+    }
+    
+    if (!proxyAddress) {
+      this.polymarketRuntime.logger.info(
+        `[PolymarketService] No proxy wallet found in trades (owners match EOA)`
+      );
+      return;
+    }
+    
+    this.polymarketRuntime.logger.info(
+      `[PolymarketService] Found potential proxy wallet from trades: ${proxyAddress}`
+    );
+    this.polymarketRuntime.logger.info(
+      `[PolymarketService] Reinitializing client with detected proxy wallet...`
+    );
+    
+    // Reinitialize the authenticated client with the detected proxy
+    await this.reinitializeWithProxy(proxyAddress);
+  }
+
+  /**
+   * Reinitialize the authenticated client with a proxy wallet address.
+   */
+  private async reinitializeWithProxy(proxyAddress: string): Promise<void> {
+    const clobApiUrlSetting =
+      this.polymarketRuntime.getSetting("CLOB_API_URL") || DEFAULT_CLOB_API_URL;
+    const clobApiUrl = String(clobApiUrlSetting);
+
+    const privateKey = this.getPrivateKey();
+    const signer = createClobClientSigner(privateKey);
+
+    // Use signature type 2 for proxy wallet
+    const signatureType = 2;
+    const funderAddress = proxyAddress;
+    
+    this.polymarketRuntime.logger.info(
+      `[PolymarketService] Reinitializing with signatureType=${signatureType}, funderAddress=${funderAddress}`
+    );
+
+    // Get existing or new credentials
+    const creds = await this.ensureApiCredentials({ allowCreate: this.getAllowCreateApiKey() });
+    if (!creds) {
+      this.polymarketRuntime.logger.warn(
+        "[PolymarketService] Cannot reinitialize: no API credentials"
+      );
+      return;
+    }
+
+    this.authenticatedClient = new ClobClient(
+      clobApiUrl,
+      POLYGON_CHAIN_ID,
+      signer,
+      creds,
+      signatureType,
+      funderAddress
+    );
+    
+    this.polymarketRuntime.logger.info(
+      "[PolymarketService] Client reinitialized with proxy wallet - refreshing account state"
+    );
+    
+    // Clear and refresh account state with new client
+    this.invalidateAccountState();
+    await this.refreshAccountState();
+  }
+
   // =============================================================================
   // Activity Context Management
   // =============================================================================
@@ -1056,6 +1403,14 @@ export class PolymarketService extends Service {
     this.polymarketRuntime.logger.debug(
       `[PolymarketService] Recorded activity: ${data.type}`
     );
+  }
+
+  /**
+   * Get cached activity context synchronously (memory only).
+   * Use this in providers to avoid blocking.
+   */
+  getCachedActivityContext(): ActivityContext | null {
+    return this.cachedActivityContext ?? null;
   }
 
   /**

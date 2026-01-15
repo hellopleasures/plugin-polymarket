@@ -4,11 +4,9 @@ import { z } from "zod";
 
 import {
   checkOrderScoringAction,
-  getMarketDetailsAction,
   getOrderBookDepthAction,
-  getOrderBookSummaryAction,
   getOrderDetailsAction,
-  getPriceHistoryAction,
+  getTokenInfoAction,
   placeOrderAction,
   researchMarketAction,
   retrieveAllMarketsAction,
@@ -120,18 +118,23 @@ export const polymarketPlugin: Plugin = {
   services: [PolymarketService],
   providers: [polymarketProvider],
   actions: [
+    // Market discovery & search (unified action using Gamma API)
+    // Handles both keyword searches ("find miami heat") and category browsing ("show sports markets")
     retrieveAllMarketsAction,
-    getMarketDetailsAction,
-    getPriceHistoryAction,
-    getOrderBookSummaryAction,
+    // Single-token comprehensive info (market details, pricing, price history, user position/orders)
+    getTokenInfoAction,
+    // Multi-token depth comparison
     getOrderBookDepthAction,
+    // Trading
     placeOrderAction,
+    // Order lookup
     getOrderDetailsAction,
+    // Order scoring check (for specific/historical orders - active orders shown in provider)
     checkOrderScoringAction,
+    // Deep market research
     researchMarketAction,
-    // Note: Balance, active orders, trade history, positions, and account access status
-    // are now automatically provided by the polymarketProvider via the service's cached state.
-    // Positions are calculated from trade history during cache refresh.
+    // Note: Account state (balances, active orders, trades, positions, order scoring)
+    // is automatically provided by polymarketProvider via the service's cached state.
     // This data refreshes on startup and every 30 minutes.
   ],
   evaluators: [],

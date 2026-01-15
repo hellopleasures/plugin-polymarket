@@ -36,12 +36,17 @@ function formatAccountStateText(accountState: CachedAccountState): string {
   if (accountState.balances.collateral) {
     lines.push(`USDC Balance: ${accountState.balances.collateral.balance}`);
     lines.push(`USDC Allowance: ${accountState.balances.collateral.allowance}`);
+  } else {
+    lines.push(`USDC Balance: Unable to fetch (check API credentials)`);
   }
 
   if (accountState.activeOrders.length > 0) {
-    lines.push(`Active Orders: ${accountState.activeOrders.length}`);
+    const scoringCount = Object.values(accountState.orderScoringStatus).filter((v) => v).length;
+    lines.push(`Active Orders: ${accountState.activeOrders.length} (${scoringCount} scoring)`);
     const orderSummaries = accountState.activeOrders.slice(0, 5).map((o: OpenOrder) => {
-      return `  - ${o.side} ${o.original_size} @ $${parseFloat(o.price).toFixed(4)} (${o.status})`;
+      const isScoring = accountState.orderScoringStatus[o.id];
+      const scoringIndicator = isScoring ? " [SCORING]" : "";
+      return `  - ${o.side} ${o.original_size} @ $${parseFloat(o.price).toFixed(4)} (${o.status})${scoringIndicator}`;
     });
     lines.push(...orderSummaries);
     if (accountState.activeOrders.length > 5) {
@@ -99,8 +104,8 @@ function formatActivityCursor(cursor: ActivityCursor): string {
     case "markets_list": {
       const marketsData = data as MarketsActivityData;
       let text = `Viewed ${marketsData.count} market(s) (${marketsData.mode} mode) ${timeAgo}`;
-      if (marketsData.category) {
-        text += ` [category: ${marketsData.category}]`;
+      if (marketsData.tags && marketsData.tags.length > 0) {
+        text += ` [tags: ${marketsData.tags.join(", ")}]`;
       }
       if (marketsData.markets.length > 0) {
         const marketsList = marketsData.markets
@@ -242,8 +247,9 @@ export const polymarketProvider: Provider = {
 
     if (service && hasApiCreds) {
       try {
-        // Get cached account state from the service (refreshes if expired)
-        const accountState = await service.getAccountState();
+        // Get cached account state - never trigger API calls from provider
+        // Service refreshes cache in background on interval
+        const accountState = service.getCachedAccountState();
 
         if (accountState) {
           values.walletAddress = accountState.walletAddress;
@@ -267,6 +273,11 @@ export const polymarketProvider: Provider = {
           // Use cached positions from account state
           if (accountState.positions.length > 0) {
             values.positions = accountState.positions;
+          }
+
+          // Include order scoring status
+          if (Object.keys(accountState.orderScoringStatus).length > 0) {
+            values.orderScoringStatus = accountState.orderScoringStatus;
           }
 
           values.apiKeysCount = accountState.apiKeys.length;
@@ -294,22 +305,15 @@ export const polymarketProvider: Provider = {
       values.providerError = providerError;
     }
 
-    // Fetch activity context for continuity
+    // Get activity context from memory cache (synchronous, never blocks)
     let activityContextText = "";
     if (service) {
-      try {
-        const activityContext = await service.getActivityContext();
-        if (activityContext && activityContext.recentHistory.length > 0) {
-          activityContextText = formatActivityContextText(activityContext);
-          values.hasActivityContext = true;
-          values.lastActivityType = activityContext.recentHistory[0]?.data.type;
-          values.activityCount = activityContext.recentHistory.length;
-        }
-      } catch (error) {
-        logger.warn(
-          "[polymarketProvider] Failed to get activity context:",
-          error instanceof Error ? error.message : String(error)
-        );
+      const activityContext = service.getCachedActivityContext();
+      if (activityContext && activityContext.recentHistory.length > 0) {
+        activityContextText = formatActivityContextText(activityContext);
+        values.hasActivityContext = true;
+        values.lastActivityType = activityContext.recentHistory[0]?.data.type;
+        values.activityCount = activityContext.recentHistory.length;
       }
     }
 

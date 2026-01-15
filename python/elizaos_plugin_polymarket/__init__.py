@@ -30,6 +30,17 @@ from elizaos_plugin_polymarket.actions import (
     revoke_api_key,
     retrieve_all_markets,
     setup_websocket,
+    # Search markets (Gamma API) - TS parity
+    search_markets,
+    SearchResult,
+    GammaMarket,
+    format_search_results,
+    # Research market - TS parity
+    research_market,
+    ResearchParams,
+    ResearchActionResult,
+    format_research_results,
+    format_research_action_result,
 )
 from elizaos_plugin_polymarket.constants import (
     CACHE_REFRESH_INTERVAL_SECS,
@@ -66,6 +77,14 @@ from elizaos_plugin_polymarket.providers import (
     polymarket_provider,
 )
 from elizaos_plugin_polymarket.service import PolymarketService, PolymarketWalletData
+from elizaos_plugin_polymarket.services import (
+    ResearchStorageService,
+    MarketResearch,
+    ResearchResult,
+    ResearchRecommendation,
+    ResearchSource,
+    ResearchStatus,
+)
 from elizaos_plugin_polymarket.types import (
     ApiKey,
     ApiKeyCreds,
@@ -106,6 +125,7 @@ __all__ = [
     "polymarket_provider",
     "PolymarketService",
     "PolymarketWalletData",
+    # Market actions
     "get_markets",
     "get_simplified_markets",
     "get_open_markets",
@@ -113,28 +133,54 @@ __all__ = [
     "retrieve_all_markets",
     "get_market_details",
     "get_sampling_markets",
+    # Order book actions
     "get_order_book",
     "get_order_book_depth",
     "get_best_price",
     "get_midpoint_price",
     "get_spread",
+    # Balance and position actions
     "get_balances",
     "get_positions",
+    # Order actions
     "place_order",
     "cancel_order",
     "get_open_orders",
     "get_order_details",
+    # Trading actions
     "get_active_orders",
     "get_trade_history",
     "get_price_history",
     "check_order_scoring",
+    # API key actions
     "create_api_key",
     "get_all_api_keys",
     "revoke_api_key",
+    # Account actions
     "get_account_access_status",
     "handle_authentication",
+    # Real-time actions
     "setup_websocket",
     "handle_realtime_updates",
+    # Search markets (Gamma API) - TS parity
+    "search_markets",
+    "SearchResult",
+    "GammaMarket",
+    "format_search_results",
+    # Research market - TS parity
+    "research_market",
+    "ResearchParams",
+    "ResearchActionResult",
+    "format_research_results",
+    "format_research_action_result",
+    # Research storage service - TS parity
+    "ResearchStorageService",
+    "MarketResearch",
+    "ResearchResult",
+    "ResearchRecommendation",
+    "ResearchSource",
+    "ResearchStatus",
+    # Types
     "Token",
     "Rewards",
     "Market",
@@ -166,6 +212,7 @@ __all__ = [
     "PriceHistoryEntry",
     "PolymarketError",
     "PolymarketErrorCode",
+    # Constants
     "POLYGON_CHAIN_ID",
     "POLYGON_CHAIN_NAME",
     "DEFAULT_CLOB_API_URL",
@@ -229,8 +276,14 @@ def get_plugin() -> dict:
             handle_authentication,
             setup_websocket,
             handle_realtime_updates,
+            # Search and research - TS parity
+            search_markets,
+            research_market,
         ],
         "providers": [
             ClobClientProvider,
+        ],
+        "services": [
+            ResearchStorageService,
         ],
     }

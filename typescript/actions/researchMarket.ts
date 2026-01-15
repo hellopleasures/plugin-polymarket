@@ -25,7 +25,12 @@ import { ResearchStorageService } from "../services/researchStorage";
 import { type MarketResearch, ResearchStatus } from "../types";
 import { RESEARCH_TASK_NAME } from "../workers/researchTaskWorker";
 import { researchMarketTemplate } from "../templates";
-import { callLLMWithTimeout, isLLMError } from "../utils/llmHelpers";
+import {
+  callLLMWithTimeout,
+  isLLMError,
+  sendAcknowledgement,
+  sendError,
+} from "../utils/llmHelpers";
 
 interface ResearchParams {
   marketId?: string;
@@ -140,15 +145,7 @@ export const researchMarketAction: Action = {
     "GET_RESEARCH",
     "CHECK_RESEARCH",
   ],
-  description: `Initiates or retrieves deep research on a Polymarket prediction market using OpenAI's deep research capabilities.
-
-Research takes approximately 20-40 minutes to complete. The action handles three scenarios:
-1. Research exists and is valid → Returns cached results immediately
-2. Research is in progress → Returns status update with elapsed time
-3. No research exists → Starts async research task and returns confirmation
-
-Use forceRefresh=true to start new research even if cached results exist.
-Parameters: marketId (condition_id), marketQuestion (the prediction question), forceRefresh (optional), callbackAction (optional: EVALUATE_TRADE or NOTIFY_ONLY)`,
+  description: "Initiates or retrieves deep research on a Polymarket prediction market using OpenAI's deep research capabilities. Takes 20-40 minutes. Returns cached results if available, status if in progress, or starts new research. Use forceRefresh=true to force new research. Parameters: marketId (condition_id), marketQuestion (the prediction question), forceRefresh (optional boolean), callbackAction (optional: EVALUATE_TRADE or NOTIFY_ONLY).",
 
   validate: async (runtime: IAgentRuntime): Promise<boolean> => {
     const openaiKey = runtime.getSetting("OPENAI_API_KEY");
@@ -156,13 +153,7 @@ Parameters: marketId (condition_id), marketQuestion (the prediction question), f
       runtime.logger.warn("[researchMarketAction] OPENAI_API_KEY required for research");
       return false;
     }
-
-    const clobApiUrl = runtime.getSetting("CLOB_API_URL");
-    if (!clobApiUrl) {
-      runtime.logger.warn("[researchMarketAction] CLOB_API_URL required");
-      return false;
-    }
-
+    // CLOB API URL has a default fallback in initializeClobClient, so no need to check here
     return true;
   },
 
@@ -204,23 +195,27 @@ Parameters: marketId (condition_id), marketQuestion (the prediction question), f
       "NOTIFY_ONLY";
 
     if (!marketId || !marketQuestion) {
-      const errorText =
-        "❌ **Missing Required Information**\n\n" +
-        "To research a market, I need:\n" +
-        "• **Market ID** (condition_id from Polymarket)\n" +
-        "• **Market Question** (the prediction question)\n\n" +
-        "Please provide the market details or use POLYMARKET_GET_MARKET_DETAILS first.";
-
-      if (callback) {
-        await callback({ text: errorText, actions: ["POLYMARKET_RESEARCH_MARKET"] });
-      }
-
+      await sendError(
+        callback,
+        "Missing required information: market ID and question are needed",
+        "Use POLYMARKET_GET_MARKETS to find a market first"
+      );
       return {
         success: false,
-        text: errorText,
+        text: "Missing market ID or question",
         data: { error: "missing_parameters" },
       };
     }
+
+    // Send acknowledgement
+    const questionPreview = marketQuestion.length > 50
+      ? marketQuestion.slice(0, 50) + "..."
+      : marketQuestion;
+    await sendAcknowledgement(callback, `Checking research status for market...`, {
+      marketId: marketId.slice(0, 16) + "...",
+      question: questionPreview,
+      forceRefresh: forceRefresh ? "yes" : "no",
+    });
 
     // Check existing research status
     const existingResearch = await storage.getMarketResearch(marketId);
@@ -423,65 +418,37 @@ Parameters: marketId (condition_id), marketQuestion (the prediction question), f
   },
 
   examples: [
+    // Example 1: User requests deep research on specific market
     [
-      {
-        name: "{{user1}}",
-        content: {
-          text: "Research the 'Will Bitcoin reach $100k by end of 2025?' market",
-        },
-      },
-      {
-        name: "{{user2}}",
-        content: {
-          text: "I'll start deep research on that prediction market. This will take about 30 minutes.",
-          action: "POLYMARKET_RESEARCH_MARKET",
-        },
-      },
+      { name: "{{user1}}", content: { text: "Do deep research on the Bitcoin $100k market" } },
+      { name: "{{user2}}", content: { text: "Starting deep research. This takes 20-40 minutes but provides comprehensive analysis from hundreds of sources.", action: "POLYMARKET_RESEARCH_MARKET" } },
     ],
+    // Example 2: Multi-turn - user considering a trade wants research first
     [
-      {
-        name: "{{user1}}",
-        content: {
-          text: "What's the research status for market 0x123abc?",
-        },
-      },
-      {
-        name: "{{user2}}",
-        content: {
-          text: "Let me check the research status for that market.",
-          action: "POLYMARKET_RESEARCH_MARKET",
-        },
-      },
+      { name: "{{user1}}", content: { text: "I'm thinking about betting on the Fed rate decision" } },
+      { name: "{{user2}}", content: { text: "That's a significant market. Would you like me to do deep research on it first, or just show you the current pricing?" } },
+      { name: "{{user1}}", content: { text: "Yes do the research, I want to understand all the factors" } },
+      { name: "{{user2}}", content: { text: "Starting comprehensive research on the Fed rate decision market. I'll analyze economic data, Fed communications, and expert predictions.", action: "POLYMARKET_RESEARCH_MARKET" } },
     ],
+    // Example 3: User just wants prices - should NOT do research
     [
-      {
-        name: "{{user1}}",
-        content: {
-          text: "Do deep analysis on the Fed interest rate market before I trade",
-        },
-      },
-      {
-        name: "{{user2}}",
-        content: {
-          text: "I'll conduct comprehensive research on that market. Deep research takes 20-40 minutes but provides thorough analysis from hundreds of sources.",
-          action: "POLYMARKET_RESEARCH_MARKET",
-        },
-      },
+      { name: "{{user1}}", content: { text: "What's the current price on the Trump market?" } },
+      { name: "{{user2}}", content: { text: "Let me fetch the current pricing.", action: "POLYMARKET_GET_TOKEN_INFO" } },
     ],
+    // Example 4: Check research status
     [
-      {
-        name: "{{user1}}",
-        content: {
-          text: "Refresh the research for the election market",
-        },
-      },
-      {
-        name: "{{user2}}",
-        content: {
-          text: "I'll start fresh research on that market, even if we have cached results.",
-          action: "POLYMARKET_RESEARCH_MARKET",
-        },
-      },
+      { name: "{{user1}}", content: { text: "Is the research on the election market done yet?" } },
+      { name: "{{user2}}", content: { text: "Let me check the research status.", action: "POLYMARKET_RESEARCH_MARKET" } },
+    ],
+    // Example 5: User wants to browse markets - should NOT do research
+    [
+      { name: "{{user1}}", content: { text: "What markets are available about AI?" } },
+      { name: "{{user2}}", content: { text: "I'll search for AI-related prediction markets.", action: "POLYMARKET_GET_MARKETS" } },
+    ],
+    // Example 6: Force refresh existing research
+    [
+      { name: "{{user1}}", content: { text: "The election research is from last week, can you update it?" } },
+      { name: "{{user2}}", content: { text: "I'll refresh the research with the latest information.", action: "POLYMARKET_RESEARCH_MARKET" } },
     ],
   ],
 };

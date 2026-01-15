@@ -37,6 +37,23 @@ from elizaos_plugin_polymarket.actions.realtime import (
     handle_realtime_updates,
     setup_websocket,
 )
+from elizaos_plugin_polymarket.actions.research import (
+    research_market,
+    ResearchParams,
+    ResearchActionResult,
+    build_research_prompt,
+    format_research_results,
+    format_full_report,
+    format_research_action_result,
+)
+from elizaos_plugin_polymarket.actions.search import (
+    search_markets,
+    SearchResult,
+    GammaMarket,
+    GammaEvent,
+    GammaTag,
+    format_search_results,
+)
 from elizaos_plugin_polymarket.actions.trading import (
     check_order_scoring,
     get_active_orders,
@@ -75,6 +92,21 @@ __all__ = [
     "handle_authentication",
     "setup_websocket",
     "handle_realtime_updates",
+    # Search markets (Gamma API)
+    "search_markets",
+    "SearchResult",
+    "GammaMarket",
+    "GammaEvent",
+    "GammaTag",
+    "format_search_results",
+    # Research market
+    "research_market",
+    "ResearchParams",
+    "ResearchActionResult",
+    "build_research_prompt",
+    "format_research_results",
+    "format_full_report",
+    "format_research_action_result",
     # TS parity constants
     "ALL_ACTION_NAMES",
 ]

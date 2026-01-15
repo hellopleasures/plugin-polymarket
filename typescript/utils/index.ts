@@ -8,6 +8,9 @@ export {
   callLLMWithTimeout,
   extractFieldFromLLM,
   isLLMError,
+  sendAcknowledgement,
+  sendError,
+  sendUpdate,
 } from "./llmHelpers";
 
 export {
