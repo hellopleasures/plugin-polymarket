@@ -45,8 +45,8 @@
     "format:check": "bunx @biomejs/biome format ."
   },
   "dependencies": {
-    "@elizaos/core": "workspace:*",
-    "@elizaos/plugin-evm": "workspace:*",
+    "@elizaos/core": "2.0.0-alpha.3",
+    "@elizaos/plugin-evm": "2.0.0-alpha.3",
     "@polymarket/clob-client": "^5.2.0",
     "viem": "^2.21.0",
     "ws": "^8.17.0",
@@ -58,7 +58,7 @@
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
-    "@elizaos/core": "workspace:*",
+    "@elizaos/core": "2.0.0-alpha.3",
     "whatwg-url": "7.1.0"
   },
   "publishConfig": {

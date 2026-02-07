@@ -34,7 +34,6 @@ async function runBuild(): Promise<boolean> {
       "viem/accounts",
       "viem/chains",
       "@polymarket/clob-client",
-      "@ethersproject/wallet",
       "ws",
       "zod",
       "https",
