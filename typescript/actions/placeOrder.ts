@@ -34,7 +34,6 @@ interface PlaceOrderParams {
   tokenId?: string;
   side: string;
   price: number;
-  size?: number; // Deprecated - use dollarAmount or shares
   dollarAmount?: number; // Dollar amount to spend (e.g., $5)
   shares?: number; // Number of shares to buy/sell
   orderType?: string;
@@ -367,7 +366,7 @@ export const placeOrderAction: Action = {
     "PROCEED",
   ],
   description:
-    "Places a buy/sell order (bet) on Polymarket. Use when user says buy, sell, bet, wager, put money on, or confirms a trade. Will search for market by name if tokenId not provided. Executes immediately without asking for confirmation. Parameters: tokenId or marketName (required), outcome (yes/no), side (buy/sell, default buy), price (0.01-0.99, uses best available if omitted), size (dollar amount or shares, required), orderType (GTC/FOK/FAK, default GTC). Requires CLOB API credentials and private key.",
+    "Places a buy/sell order (bet) on Polymarket. Use when user says buy, sell, bet, wager, put money on, or confirms a trade. Will search for market by name if tokenId not provided. Executes immediately without asking for confirmation. Parameters: tokenId or marketName (required), outcome (yes/no), side (buy/sell, default buy), price (0.01-0.99, uses best available if omitted), dollarAmount or shares (required), orderType (GTC/FOK/FAK, default GTC). Requires CLOB API credentials and private key.",
 
   parameters: [
     {
@@ -396,9 +395,15 @@ export const placeOrderAction: Action = {
       schema: { type: "number" },
     },
     {
-      name: "size",
-      description: "Number of shares or dollar amount",
-      required: true,
+      name: "dollarAmount",
+      description: "Dollar amount to spend (e.g., 5 for $5)",
+      required: false,
+      schema: { type: "number" },
+    },
+    {
+      name: "shares",
+      description: "Number of shares to buy/sell",
+      required: false,
       schema: { type: "number" },
     },
     {
@@ -480,7 +485,7 @@ export const placeOrderAction: Action = {
 
     // Extract dollar amount or shares from LLM result
     const dollarAmount = llmResult?.dollarAmount ?? 0;
-    const sharesInput = llmResult?.shares ?? llmResult?.size ?? 0;
+    const sharesInput = llmResult?.shares ?? 0;
     let size = 0;
     let isDollarAmount = false;
 

@@ -10,6 +10,8 @@ keywords = ["ai", "agent", "polymarket", "prediction-markets", "web3"]
 categories = ["cryptography::cryptocurrencies", "web-programming"]
 readme = "README.md"
 
+include = ["src/**/*", "Cargo.toml", "README.md", "LICENSE"]
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 

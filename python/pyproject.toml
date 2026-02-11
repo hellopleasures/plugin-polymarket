@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "elizaos-plugin-polymarket"
-version = "2.0.0"
+version = "2.0.0a4"
 description = "Polymarket prediction markets plugin for elizaOS - Python implementation"
 readme = "README.md"
 license = "MIT"
