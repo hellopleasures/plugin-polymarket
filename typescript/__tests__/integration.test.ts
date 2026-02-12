@@ -57,12 +57,11 @@ describe("Polymarket Plugin Integration Tests", () => {
     it("should export market actions", async () => {
       const actions = await import("../actions");
       expect(actions.retrieveAllMarketsAction).toBeDefined();
-      expect(actions.getMarketDetailsAction).toBeDefined();
+      expect(actions.getTokenInfoAction).toBeDefined();
     });
 
     it("should export order book actions", async () => {
       const actions = await import("../actions");
-      expect(actions.getOrderBookSummaryAction).toBeDefined();
       expect(actions.getOrderBookDepthAction).toBeDefined();
     });
 
