@@ -414,36 +414,65 @@ export const placeOrderAction: Action = {
     },
   ],
 
-  validate: async (runtime: IAgentRuntime): Promise<boolean> => {
-    const privateKey =
-      runtime.getSetting("POLYMARKET_PRIVATE_KEY") ||
-      runtime.getSetting("EVM_PRIVATE_KEY") ||
-      runtime.getSetting("WALLET_PRIVATE_KEY") ||
-      runtime.getSetting("PRIVATE_KEY");
+  validate: async (runtime: any, message: any, state?: any, options?: any): Promise<boolean> => {
+    const __avTextRaw = typeof message?.content?.text === "string" ? message.content.text : "";
+    const __avText = __avTextRaw.toLowerCase();
+    const __avKeywords = ["polymarket", "place", "order"];
+    const __avKeywordOk =
+      __avKeywords.length > 0 && __avKeywords.some((kw) => kw.length > 0 && __avText.includes(kw));
+    const __avRegex = /\b(?:polymarket|place|order)\b/i;
+    const __avRegexOk = __avRegex.test(__avText);
+    const __avSource = String(message?.content?.source ?? message?.source ?? "");
+    const __avExpectedSource = "";
+    const __avSourceOk = __avExpectedSource
+      ? __avSource === __avExpectedSource
+      : Boolean(__avSource || state || runtime?.agentId || runtime?.getService);
+    const __avOptions = options && typeof options === "object" ? options : {};
+    const __avInputOk =
+      __avText.trim().length > 0 ||
+      Object.keys(__avOptions as Record<string, unknown>).length > 0 ||
+      Boolean(message?.content && typeof message.content === "object");
 
-    if (!privateKey) {
-      runtime.logger.warn("[placeOrderAction] Private key is required for trading");
+    if (!(__avKeywordOk && __avRegexOk && __avSourceOk && __avInputOk)) {
       return false;
     }
 
-    const clobApiKey = runtime.getSetting("CLOB_API_KEY");
-    const clobApiSecret =
-      runtime.getSetting("CLOB_API_SECRET") || runtime.getSetting("CLOB_SECRET");
-    const clobApiPassphrase =
-      runtime.getSetting("CLOB_API_PASSPHRASE") || runtime.getSetting("CLOB_PASS_PHRASE");
-    const allowCreate = runtime.getSetting("POLYMARKET_ALLOW_CREATE_API_KEY");
-    const hasEnvCreds = Boolean(clobApiKey && clobApiSecret && clobApiPassphrase);
-    const canCreateCreds = allowCreate !== "false" && allowCreate !== false;
+    const __avLegacyValidate = async (runtime: IAgentRuntime): Promise<boolean> => {
+      const privateKey =
+        runtime.getSetting("POLYMARKET_PRIVATE_KEY") ||
+        runtime.getSetting("EVM_PRIVATE_KEY") ||
+        runtime.getSetting("WALLET_PRIVATE_KEY") ||
+        runtime.getSetting("PRIVATE_KEY");
 
-    if (!hasEnvCreds && !canCreateCreds) {
-      runtime.logger.warn(
-        "[placeOrderAction] CLOB API credentials are required for trading. " +
-          "Set CLOB_API_KEY/SECRET/PASSPHRASE or enable POLYMARKET_ALLOW_CREATE_API_KEY.",
-      );
+      if (!privateKey) {
+        runtime.logger.warn("[placeOrderAction] Private key is required for trading");
+        return false;
+      }
+
+      const clobApiKey = runtime.getSetting("CLOB_API_KEY");
+      const clobApiSecret =
+        runtime.getSetting("CLOB_API_SECRET") || runtime.getSetting("CLOB_SECRET");
+      const clobApiPassphrase =
+        runtime.getSetting("CLOB_API_PASSPHRASE") || runtime.getSetting("CLOB_PASS_PHRASE");
+      const allowCreate = runtime.getSetting("POLYMARKET_ALLOW_CREATE_API_KEY");
+      const hasEnvCreds = Boolean(clobApiKey && clobApiSecret && clobApiPassphrase);
+      const canCreateCreds = allowCreate !== "false" && allowCreate !== false;
+
+      if (!hasEnvCreds && !canCreateCreds) {
+        runtime.logger.warn(
+          "[placeOrderAction] CLOB API credentials are required for trading. " +
+            "Set CLOB_API_KEY/SECRET/PASSPHRASE or enable POLYMARKET_ALLOW_CREATE_API_KEY.",
+        );
+        return false;
+      }
+
+      return true;
+    };
+    try {
+      return Boolean(await (__avLegacyValidate as any)(runtime, message, state, options));
+    } catch {
       return false;
     }
-
-    return true;
   },
 
   handler: async (

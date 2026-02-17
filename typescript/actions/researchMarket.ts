@@ -144,14 +144,43 @@ export const researchMarketAction: Action = {
   description:
     "Initiates or retrieves deep research on a Polymarket prediction market using OpenAI's deep research capabilities. Takes 20-40 minutes. Returns cached results if available, status if in progress, or starts new research. Use forceRefresh=true to force new research. Parameters: marketId (condition_id), marketQuestion (the prediction question), forceRefresh (optional boolean), callbackAction (optional: EVALUATE_TRADE or NOTIFY_ONLY).",
 
-  validate: async (runtime: IAgentRuntime): Promise<boolean> => {
-    const openaiKey = runtime.getSetting("OPENAI_API_KEY");
-    if (!openaiKey) {
-      runtime.logger.warn("[researchMarketAction] OPENAI_API_KEY required for research");
+  validate: async (runtime: any, message: any, state?: any, options?: any): Promise<boolean> => {
+    const __avTextRaw = typeof message?.content?.text === "string" ? message.content.text : "";
+    const __avText = __avTextRaw.toLowerCase();
+    const __avKeywords = ["polymarket", "research", "market"];
+    const __avKeywordOk =
+      __avKeywords.length > 0 && __avKeywords.some((kw) => kw.length > 0 && __avText.includes(kw));
+    const __avRegex = /\b(?:polymarket|research|market)\b/i;
+    const __avRegexOk = __avRegex.test(__avText);
+    const __avSource = String(message?.content?.source ?? message?.source ?? "");
+    const __avExpectedSource = "";
+    const __avSourceOk = __avExpectedSource
+      ? __avSource === __avExpectedSource
+      : Boolean(__avSource || state || runtime?.agentId || runtime?.getService);
+    const __avOptions = options && typeof options === "object" ? options : {};
+    const __avInputOk =
+      __avText.trim().length > 0 ||
+      Object.keys(__avOptions as Record<string, unknown>).length > 0 ||
+      Boolean(message?.content && typeof message.content === "object");
+
+    if (!(__avKeywordOk && __avRegexOk && __avSourceOk && __avInputOk)) {
       return false;
     }
-    // CLOB API URL has a default fallback in initializeClobClient, so no need to check here
-    return true;
+
+    const __avLegacyValidate = async (runtime: IAgentRuntime): Promise<boolean> => {
+      const openaiKey = runtime.getSetting("OPENAI_API_KEY");
+      if (!openaiKey) {
+        runtime.logger.warn("[researchMarketAction] OPENAI_API_KEY required for research");
+        return false;
+      }
+      // CLOB API URL has a default fallback in initializeClobClient, so no need to check here
+      return true;
+    };
+    try {
+      return Boolean(await (__avLegacyValidate as any)(runtime, message, state, options));
+    } catch {
+      return false;
+    }
   },
 
   handler: async (

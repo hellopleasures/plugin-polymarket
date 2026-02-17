@@ -6,7 +6,7 @@ import type {
   ProviderValue,
   State,
 } from "@elizaos/core";
-import { logger } from "@elizaos/core";
+import { logger, validateActionKeywords, validateActionRegex } from "@elizaos/core";
 import { DEFAULT_CLOB_API_URL, POLYGON_CHAIN_ID, POLYMARKET_SERVICE_NAME } from "../constants";
 import type { PolymarketService } from "../services/polymarket";
 import type {
@@ -193,7 +193,49 @@ export const polymarketProvider: Provider = {
   description:
     "Provides current Polymarket account state and trading context from the service cache",
 
+  dynamic: true,
+  relevanceKeywords: [
+    "polymarket",
+    "polymarketprovider",
+    "plugin",
+    "status",
+    "state",
+    "context",
+    "info",
+    "details",
+    "chat",
+    "conversation",
+    "agent",
+    "room",
+    "channel",
+    "user",
+  ],
   get: async (runtime: IAgentRuntime, _message: Memory, _state: State): Promise<ProviderResult> => {
+    const __providerKeywords = [
+      "polymarket",
+      "polymarketprovider",
+      "plugin",
+      "status",
+      "state",
+      "context",
+      "info",
+      "details",
+      "chat",
+      "conversation",
+      "agent",
+      "room",
+      "channel",
+      "user",
+    ];
+    const __providerRegex = new RegExp(`\\b(${__providerKeywords.join("|")})\\b`, "i");
+    const __recentMessages = _state?.recentMessagesData || [];
+    const __isRelevant =
+      validateActionKeywords(_message, __recentMessages, __providerKeywords) ||
+      validateActionRegex(_message, __recentMessages, __providerRegex);
+    if (!__isRelevant) {
+      return { text: "" };
+    }
+
     const clobApiUrl = runtime.getSetting("CLOB_API_URL") || DEFAULT_CLOB_API_URL;
     const hasPrivateKey = Boolean(
       runtime.getSetting("POLYMARKET_PRIVATE_KEY") ||

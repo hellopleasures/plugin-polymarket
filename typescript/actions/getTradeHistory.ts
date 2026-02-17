@@ -42,43 +42,110 @@ export const getTradeHistoryAction: Action = {
   description:
     "Retrieves the authenticated user's filled trade history, optionally filtered by market or asset. Use when the user asks for past trades or fills. Do not use for open orders or a specific order status; use getActiveOrdersAction or getOrderDetailsAction. Parameters: market (optional slug), assetId (optional token ID), limit (optional). Requires full CLOB credentials.",
 
-  validate: async (runtime: IAgentRuntime, message: Memory, _state?: State): Promise<boolean> => {
-    runtime.logger.info(
-      `[getTradeHistoryAction] Validate called for message: "${message.content?.text}"`,
-    );
-    const clobApiUrl = runtime.getSetting("CLOB_API_URL");
-    const clobApiKey = runtime.getSetting("CLOB_API_KEY");
-    const clobApiSecret =
-      runtime.getSetting("CLOB_API_SECRET") || runtime.getSetting("CLOB_SECRET");
-    const clobApiPassphrase =
-      runtime.getSetting("CLOB_API_PASSPHRASE") || runtime.getSetting("CLOB_PASS_PHRASE");
-    const privateKey =
-      runtime.getSetting("WALLET_PRIVATE_KEY") ||
-      runtime.getSetting("PRIVATE_KEY") ||
-      runtime.getSetting("POLYMARKET_PRIVATE_KEY");
+  validate: async (runtime: any, message: any, state?: any, options?: any): Promise<boolean> => {
+    const __avTextRaw = typeof message?.content?.text === "string" ? message.content.text : "";
+    const __avText = __avTextRaw.toLowerCase();
+    const __avKeywords = ["polymarket", "get", "trade", "history"];
+    const __avKeywordOk =
+      __avKeywords.length > 0 && __avKeywords.some((kw) => kw.length > 0 && __avText.includes(kw));
+    const __avRegex = /\b(?:polymarket|get|trade|history)\b/i;
+    const __avRegexOk = __avRegex.test(__avText);
+    const __avSource = String(message?.content?.source ?? message?.source ?? "");
+    const __avExpectedSource = "";
+    const __avSourceOk = __avExpectedSource
+      ? __avSource === __avExpectedSource
+      : Boolean(__avSource || state || runtime?.agentId || runtime?.getService);
+    const __avOptions = options && typeof options === "object" ? options : {};
+    const __avInputOk =
+      __avText.trim().length > 0 ||
+      Object.keys(__avOptions as Record<string, unknown>).length > 0 ||
+      Boolean(message?.content && typeof message.content === "object");
 
-    if (!clobApiUrl) {
-      runtime.logger.warn("[getTradeHistoryAction] CLOB_API_URL is required.");
+    if (!(__avKeywordOk && __avRegexOk && __avSourceOk && __avInputOk)) {
       return false;
     }
-    if (!privateKey) {
-      runtime.logger.warn(
-        "[getTradeHistoryAction] A private key (WALLET_PRIVATE_KEY, PRIVATE_KEY, or POLYMARKET_PRIVATE_KEY) is required.",
-      );
+
+    const __avLegacyValidate = async (
+      runtime: any,
+      message: any,
+      state?: any,
+      options?: any,
+    ): Promise<boolean> => {
+      const __avTextRaw = typeof message?.content?.text === "string" ? message.content.text : "";
+      const __avText = __avTextRaw.toLowerCase();
+      const __avKeywords = ["polymarket", "get", "trade", "history"];
+      const __avKeywordOk =
+        __avKeywords.length > 0 &&
+        __avKeywords.some((kw) => kw.length > 0 && __avText.includes(kw));
+      const __avRegexOk = /\b(?:polymarket|get|trade|history)\b/i.test(__avText);
+      const __avSource = String(message?.content?.source ?? message?.source ?? "");
+      const __avExpectedSource = "";
+      const __avSourceOk = __avExpectedSource
+        ? __avSource === __avExpectedSource
+        : Boolean(__avSource || state || runtime?.agentId || runtime?.getService);
+      const __avOptions = options && typeof options === "object" ? options : {};
+      const __avInputOk =
+        __avText.trim().length > 0 ||
+        Object.keys(__avOptions as Record<string, unknown>).length > 0 ||
+        Boolean(message?.content && typeof message.content === "object");
+
+      if (!(__avKeywordOk && __avRegexOk && __avSourceOk && __avInputOk)) {
+        return false;
+      }
+
+      const __avLegacyValidate = async (
+        runtime: IAgentRuntime,
+        message: Memory,
+        _state?: State,
+      ): Promise<boolean> => {
+        runtime.logger.info(
+          `[getTradeHistoryAction] Validate called for message: "${message.content?.text}"`,
+        );
+        const clobApiUrl = runtime.getSetting("CLOB_API_URL");
+        const clobApiKey = runtime.getSetting("CLOB_API_KEY");
+        const clobApiSecret =
+          runtime.getSetting("CLOB_API_SECRET") || runtime.getSetting("CLOB_SECRET");
+        const clobApiPassphrase =
+          runtime.getSetting("CLOB_API_PASSPHRASE") || runtime.getSetting("CLOB_PASS_PHRASE");
+        const privateKey =
+          runtime.getSetting("WALLET_PRIVATE_KEY") ||
+          runtime.getSetting("PRIVATE_KEY") ||
+          runtime.getSetting("POLYMARKET_PRIVATE_KEY");
+
+        if (!clobApiUrl) {
+          runtime.logger.warn("[getTradeHistoryAction] CLOB_API_URL is required.");
+          return false;
+        }
+        if (!privateKey) {
+          runtime.logger.warn(
+            "[getTradeHistoryAction] A private key (WALLET_PRIVATE_KEY, PRIVATE_KEY, or POLYMARKET_PRIVATE_KEY) is required.",
+          );
+          return false;
+        }
+        if (!clobApiKey || !clobApiSecret || !clobApiPassphrase) {
+          const missing: string[] = [];
+          if (!clobApiKey) missing.push("CLOB_API_KEY");
+          if (!clobApiSecret) missing.push("CLOB_API_SECRET or CLOB_SECRET");
+          if (!clobApiPassphrase) missing.push("CLOB_API_PASSPHRASE or CLOB_PASS_PHRASE");
+          runtime.logger.warn(
+            `[getTradeHistoryAction] Missing required API credentials for L2 authentication: ${missing.join(", ")}.`,
+          );
+          return false;
+        }
+        runtime.logger.info("[getTradeHistoryAction] Validation passed");
+        return true;
+      };
+      try {
+        return Boolean(await (__avLegacyValidate as any)(runtime, message, state, options));
+      } catch {
+        return false;
+      }
+    };
+    try {
+      return Boolean(await (__avLegacyValidate as any)(runtime, message, state, options));
+    } catch {
       return false;
     }
-    if (!clobApiKey || !clobApiSecret || !clobApiPassphrase) {
-      const missing: string[] = [];
-      if (!clobApiKey) missing.push("CLOB_API_KEY");
-      if (!clobApiSecret) missing.push("CLOB_API_SECRET or CLOB_SECRET");
-      if (!clobApiPassphrase) missing.push("CLOB_API_PASSPHRASE or CLOB_PASS_PHRASE");
-      runtime.logger.warn(
-        `[getTradeHistoryAction] Missing required API credentials for L2 authentication: ${missing.join(", ")}.`,
-      );
-      return false;
-    }
-    runtime.logger.info("[getTradeHistoryAction] Validation passed");
-    return true;
   },
 
   handler: async (
