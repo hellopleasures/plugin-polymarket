@@ -26,6 +26,7 @@ import {
   sendAcknowledgement,
   sendError,
 } from "../utils/llmHelpers";
+import { deriveBestBid, deriveBestAsk } from "../utils/orderBook";
 
 // =============================================================================
 // Types
@@ -99,22 +100,20 @@ function safeNumber(input: string | number | undefined): number {
 }
 
 function calculatePricing(orderBook: OrderBook): TokenPricing {
-  const topBid = orderBook.bids?.[0];
-  const topAsk = orderBook.asks?.[0];
+  const topBid = deriveBestBid(orderBook.bids ?? []);
+  const topAsk = deriveBestAsk(orderBook.asks ?? []);
 
-  const bestBid = topBid?.price ?? null;
+  const bestBid = topBid ? topBid.price.toFixed(4) : null;
   const bestBidSize = topBid?.size ?? null;
-  const bestAsk = topAsk?.price ?? null;
+  const bestAsk = topAsk ? topAsk.price.toFixed(4) : null;
   const bestAskSize = topAsk?.size ?? null;
 
   let midpoint: string | null = null;
   let spread: string | null = null;
 
-  if (bestBid && bestAsk) {
-    const bidNum = safeNumber(bestBid);
-    const askNum = safeNumber(bestAsk);
-    midpoint = ((bidNum + askNum) / 2).toFixed(4);
-    spread = (askNum - bidNum).toFixed(4);
+  if (topBid && topAsk) {
+    midpoint = ((topBid.price + topAsk.price) / 2).toFixed(4);
+    spread = (topAsk.price - topBid.price).toFixed(4);
   }
 
   return {
