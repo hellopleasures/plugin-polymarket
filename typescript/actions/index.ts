@@ -1,4 +1,6 @@
+export { cancelOrderAction } from "./cancelOrder";
 export { checkOrderScoringAction } from "./checkOrderScoring";
+export { closePositionAction } from "./closePosition";
 export { retrieveAllMarketsAction } from "./getMarkets";
 export { getOrderDetailsAction } from "./getOrderDetails";
 export { getTokenInfoAction } from "./getTokenInfo";
