@@ -25,6 +25,7 @@ import {
   sendError,
   sendUpdate,
 } from "../utils/llmHelpers";
+import { deriveBestAsk, deriveBestBid } from "../utils/orderBook";
 
 interface PlaceOrderParams {
   tokenId?: string;
@@ -671,13 +672,13 @@ export const placeOrderAction: Action = {
 
       // If user didn't specify a price and we have order book data, use best available
       if (price <= 0 || price === 0.5) {
-        const bestAsk = orderBook.asks?.[0]?.price;
-        const bestBid = orderBook.bids?.[0]?.price;
+        const bestAsk = deriveBestAsk(orderBook.asks ?? []);
+        const bestBid = deriveBestBid(orderBook.bids ?? []);
         if (side === "BUY" && bestAsk) {
-          price = parseFloat(bestAsk);
+          price = bestAsk.price;
           runtime.logger.info(`[placeOrderAction] Using best ask price: $${price}`);
         } else if (side === "SELL" && bestBid) {
-          price = parseFloat(bestBid);
+          price = bestBid.price;
           runtime.logger.info(`[placeOrderAction] Using best bid price: $${price}`);
         }
       }
