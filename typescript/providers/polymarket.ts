@@ -13,12 +13,15 @@ import type {
   MarketDetailsActivityData,
   MarketsActivityData,
   OpenOrder,
+  OrderBook,
   OrderDetailsActivityData,
   OrderScoringActivityData,
   Position,
   PriceHistoryActivityData,
   TradeHistoryActivityData,
 } from "../types";
+import { initializeClobClient } from "../utils/clobClient";
+import { deriveBestBid } from "../utils/orderBook";
 
 function parseBooleanSetting(value: string | undefined): boolean {
   if (!value) {
@@ -28,7 +31,7 @@ function parseBooleanSetting(value: string | undefined): boolean {
   return normalized === "1" || normalized === "true" || normalized === "yes";
 }
 
-function formatAccountStateText(accountState: CachedAccountState): string {
+function formatAccountStateText(accountState: CachedAccountState, positionPrices?: Map<string, number>): string {
   const lines: string[] = [];
 
   lines.push(`Wallet: ${accountState.walletAddress}`);
@@ -60,15 +63,54 @@ function formatAccountStateText(accountState: CachedAccountState): string {
     lines.push(`Recent Trades: ${accountState.recentTrades.length}`);
   }
 
-  // Use cached positions from account state
   if (accountState.positions.length > 0) {
     lines.push(`Open Positions: ${accountState.positions.length}`);
-    const posSummaries = accountState.positions.slice(0, 5).map((p) => {
-      const pnl = parseFloat(p.realized_pnl);
-      const pnlSign = pnl >= 0 ? "+" : "";
-      return `  - ${p.asset_id.substring(0, 8)}...: ${p.size} @ avg $${p.average_price} (PnL: ${pnlSign}${p.realized_pnl})`;
+    let totalUnrealizedPnl = 0;
+    let totalValue = 0;
+
+    const posSummaries = accountState.positions.slice(0, 10).map((p) => {
+      const size = parseFloat(p.size);
+      const avgPrice = parseFloat(p.average_price);
+      const realizedPnl = parseFloat(p.realized_pnl);
+      const pnlSign = realizedPnl >= 0 ? "+" : "";
+
+      const currentPrice = positionPrices?.get(p.asset_id);
+      let unrealizedStr = "";
+      if (currentPrice !== undefined && size > 0) {
+        const unrealizedPnl = (currentPrice - avgPrice) * size;
+        const unrealizedPct = avgPrice > 0 ? ((currentPrice - avgPrice) / avgPrice) * 100 : 0;
+        totalUnrealizedPnl += unrealizedPnl;
+        totalValue += currentPrice * size;
+        const uSign = unrealizedPnl >= 0 ? "+" : "";
+        unrealizedStr = ` | Unrealized: ${uSign}$${unrealizedPnl.toFixed(2)} (${uSign}${unrealizedPct.toFixed(1)}%)`;
+      } else if (size > 0) {
+        totalValue += avgPrice * size;
+      }
+
+      return `  - ${p.asset_id.substring(0, 8)}...: ${p.size} @ avg $${p.average_price} (PnL: ${pnlSign}${p.realized_pnl})${unrealizedStr}`;
     });
+
     lines.push(...posSummaries);
+
+    if (positionPrices && positionPrices.size > 0) {
+      lines.push("");
+      lines.push(`Portfolio Value: $${totalValue.toFixed(2)}`);
+      const totalSign = totalUnrealizedPnl >= 0 ? "+" : "";
+      lines.push(`Total Unrealized P&L: ${totalSign}$${totalUnrealizedPnl.toFixed(2)}`);
+
+      if (totalValue > 0) {
+        let maxPct = 0;
+        for (const p of accountState.positions) {
+          const size = parseFloat(p.size);
+          const price = positionPrices.get(p.asset_id) ?? parseFloat(p.average_price);
+          const pct = ((price * size) / totalValue) * 100;
+          if (pct > maxPct) maxPct = pct;
+        }
+        if (maxPct > 50) {
+          lines.push(`Warning: Concentration risk: largest position is ${maxPct.toFixed(0)}% of portfolio`);
+        }
+      }
+    }
   }
 
   const ageMs = Date.now() - accountState.lastUpdatedAt;
@@ -285,7 +327,32 @@ export const polymarketProvider: Provider = {
           values.accountStateLastUpdated = accountState.lastUpdatedAt;
           values.accountStateExpiresAt = accountState.expiresAt;
 
-          accountStateText = formatAccountStateText(accountState);
+          // Fetch current prices for P&L calculation
+          let positionPrices: Map<string, number> | undefined;
+          if (accountState.positions.length > 0) {
+            positionPrices = new Map();
+            try {
+              const client = await initializeClobClient(runtime);
+              const activePositions = accountState.positions.filter(
+                (p) => parseFloat(p.size) > 0
+              );
+              for (const pos of activePositions.slice(0, 10)) {
+                try {
+                  const ob = (await client.getOrderBook(pos.asset_id)) as OrderBook;
+                  const bestBid = deriveBestBid(ob.bids ?? []);
+                  if (bestBid) {
+                    positionPrices.set(pos.asset_id, bestBid.price);
+                  }
+                } catch {
+                  // Skip — price unavailable for this token
+                }
+              }
+            } catch {
+              positionPrices = undefined;
+            }
+          }
+
+          accountStateText = formatAccountStateText(accountState, positionPrices);
         } else if (strictMode) {
           throw new Error("Polymarket provider strict mode: account state unavailable.");
         }
