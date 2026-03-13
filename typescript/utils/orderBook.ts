@@ -7,6 +7,7 @@
 
 import { type IAgentRuntime, type State } from "@elizaos/core";
 import type { OrderBookSummary } from "@polymarket/clob-client";
+import type { BookEntry } from "../types";
 import { initializeClobClient } from "./clobClient";
 import { callLLMWithTimeout, isLLMError } from "./llmHelpers";
 
@@ -259,4 +260,49 @@ export async function fetchOrderBookSummary(
 ): Promise<OrderBookSummary> {
   const client = await initializeClobClient(runtime);
   return client.getOrderBook(tokenId);
+}
+
+// =============================================================================
+// Best Price Derivation
+// =============================================================================
+
+export interface BestPrice {
+  price: number;
+  size: string;
+}
+
+/**
+ * Derive best bid (highest price) across all bid levels.
+ * Handles unsorted arrays and filters invalid prices.
+ */
+export function deriveBestBid(bids: BookEntry[]): BestPrice | null {
+  let best: BestPrice | null = null;
+
+  for (const level of bids) {
+    const price = parseFloat(level.price);
+    if (!Number.isFinite(price) || price <= 0) continue;
+    if (best === null || price > best.price) {
+      best = { price, size: level.size };
+    }
+  }
+
+  return best;
+}
+
+/**
+ * Derive best ask (lowest price) across all ask levels.
+ * Handles unsorted arrays and filters invalid prices.
+ */
+export function deriveBestAsk(asks: BookEntry[]): BestPrice | null {
+  let best: BestPrice | null = null;
+
+  for (const level of asks) {
+    const price = parseFloat(level.price);
+    if (!Number.isFinite(price) || price <= 0) continue;
+    if (best === null || price < best.price) {
+      best = { price, size: level.size };
+    }
+  }
+
+  return best;
 }
