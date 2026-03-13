@@ -8,7 +8,7 @@ import {
   type State,
 } from "@elizaos/core";
 import type { ClobClient } from "@polymarket/clob-client";
-import { POLYMARKET_SERVICE_NAME } from "../constants";
+import { DEFAULT_CLOB_API_URL, POLYMARKET_SERVICE_NAME } from "../constants";
 import type { PolymarketService } from "../services/polymarket";
 import { checkOrderScoringTemplate } from "../templates";
 import type { AreOrdersScoringResponse, OrderScoringActivityData } from "../types";
@@ -38,7 +38,7 @@ export const checkOrderScoringAction: Action = {
     runtime.logger.info(
       `[checkOrderScoringAction] Validate called for message: "${message.content?.text}"`
     );
-    const clobApiUrl = runtime.getSetting("CLOB_API_URL");
+    const clobApiUrl = runtime.getSetting("CLOB_API_URL") || DEFAULT_CLOB_API_URL;
     const clobApiKey = runtime.getSetting("CLOB_API_KEY");
     const clobApiSecret =
       runtime.getSetting("CLOB_API_SECRET") || runtime.getSetting("CLOB_SECRET");
