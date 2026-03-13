@@ -3,7 +3,9 @@ import { logger } from "@elizaos/core";
 import { z } from "zod";
 
 import {
+  cancelOrderAction,
   checkOrderScoringAction,
+  closePositionAction,
   getOrderBookDepthAction,
   getOrderDetailsAction,
   getTokenInfoAction,
@@ -11,6 +13,7 @@ import {
   researchMarketAction,
   retrieveAllMarketsAction,
 } from "./actions";
+import { tradeRiskEvaluator } from "./evaluators";
 import { polymarketProvider } from "./providers";
 import { PolymarketService } from "./services";
 import { researchTaskWorker } from "./workers";
@@ -133,11 +136,15 @@ export const polymarketPlugin: Plugin = {
     checkOrderScoringAction,
     // Deep market research
     researchMarketAction,
+    // Cancel orders (all, per-token, or specific)
+    cancelOrderAction,
+    // Close/exit a position by selling all held shares
+    closePositionAction,
     // Note: Account state (balances, active orders, trades, positions, order scoring)
     // is automatically provided by polymarketProvider via the service's cached state.
     // This data refreshes on startup and every 30 minutes.
   ],
-  evaluators: [],
+  evaluators: [tradeRiskEvaluator],
 };
 
 export default polymarketPlugin;
